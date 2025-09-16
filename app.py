@@ -47,9 +47,44 @@ else:
     st.stop()
 
 # Convertir columnas numéricas si existen
-for col in ["JIF", "Citas"]:
+for col in ["JIF", "Citas", "Year"]:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
+
+# ==============================
+# FILTROS EN SIDEBAR
+# ==============================
+st.sidebar.header("🎛️ Filtros")
+
+# Filtro por años
+if "Year" in df.columns:
+    min_year, max_year = int(df["Year"].min()), int(df["Year"].max())
+    year_range = st.sidebar.slider("Rango de años", min_year, max_year, (min_year, max_year))
+    df = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])]
+
+# Filtro por departamentos
+if "Departamento" in df.columns:
+    departamentos = st.sidebar.multiselect(
+        "Departamentos", sorted(df["Departamento"].dropna().unique())
+    )
+    if departamentos:
+        df = df[df["Departamento"].isin(departamentos)]
+
+# Filtro por cuartiles
+if "Cuartil_JCR" in df.columns:
+    cuartiles = st.sidebar.multiselect(
+        "Cuartiles JCR", sorted(df["Cuartil_JCR"].dropna().unique())
+    )
+    if cuartiles:
+        df = df[df["Cuartil_JCR"].isin(cuartiles)]
+
+# Filtro por colaboración
+if "Colaboración" in df.columns:
+    colaboracion = st.sidebar.multiselect(
+        "Tipo de colaboración", sorted(df["Colaboración"].dropna().unique())
+    )
+    if colaboracion:
+        df = df[df["Colaboración"].isin(colaboracion)]
 
 # ==============================
 # TABS PRINCIPALES
@@ -78,11 +113,11 @@ with tab2:
     total_pubs = len(df)
     q1q2_pct = (
         (df["Cuartil_JCR"].isin(["Q1", "Q2"]).mean() * 100)
-        if "Cuartil_JCR" in df.columns else None
+        if "Cuartil_JCR" in df.columns and len(df) > 0 else None
     )
     intl_pct = (
         (df["Colaboración"].eq("Internacional").mean() * 100)
-        if "Colaboración" in df.columns else None
+        if "Colaboración" in df.columns and len(df) > 0 else None
     )
     total_citas = int(df["Citas"].sum()) if "Citas" in df.columns else None
     avg_jif = round(df["JIF"].mean(), 2) if "JIF" in df.columns else None
