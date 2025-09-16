@@ -1,191 +1,96 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
-import os
 
-# ==============================
-# CONFIGURACIÓN GENERAL
-# ==============================
 st.set_page_config(
-    page_title="Dashboard Cienciométrico — CAS–UDD",
+    page_title="Dashboard Cienciométrico — Facultad de Medicina Clínica Alemana, Universidad del Desarrollo",
     layout="wide",
-    initial_sidebar_state="expanded"
 )
 
-# ==============================
-# LOGO + TÍTULO
-# ==============================
-st.markdown("""
-<div style="display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
-    <img src="https://raw.githubusercontent.com/Olesteff/Dashboard_CAS/main/cas-udd.jpg" 
-         alt="Logo CAS-UDD" width="120" style="margin-right:20px;">
-    <h1 style="color:#004080;margin:0;">📊 Dashboard Cienciométrico</h1>
-</div>
-<h3 style="text-align:center;color:#777;margin-top:0;">
-    Facultad de Medicina Clínica Alemana – Universidad del Desarrollo
-</h3>
-""", unsafe_allow_html=True)
+st.title("📊 Dashboard Cienciométrico — Facultad de Medicina Clínica Alemana, Universidad del Desarrollo")
 
-# ==============================
-# ARCHIVO POR DEFECTO
-# ==============================
-DEFAULT_FILE = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
-
-st.sidebar.header("📂 Subir archivo Excel")
-uploaded_file = st.sidebar.file_uploader(
-    "Carga el dataset consolidado (.xlsx)", type=["xlsx"]
-)
+# ==========================
+# 📂 Carga de datos
+# ==========================
+uploaded_file = st.sidebar.file_uploader("Sube el Excel enriquecido", type=["xlsx"])
 
 if uploaded_file:
-    df = pd.read_excel(uploaded_file, dtype=str)
-    st.success("✅ Dataset cargado correctamente")
-elif os.path.exists(DEFAULT_FILE):
-    df = pd.read_excel(DEFAULT_FILE, dtype=str)
-    st.info(f"ℹ️ Usando dataset por defecto: {DEFAULT_FILE}")
+    df = pd.read_excel(uploaded_file)
 else:
-    st.error("❌ No se encontró dataset. Sube un archivo Excel.")
+    st.warning("Sube un archivo Excel para comenzar")
     st.stop()
 
-# Convertir columnas numéricas si existen
-for col in ["JIF", "Citas", "Year"]:
-    if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
 
-# ==============================
-# FILTROS EN SIDEBAR
-# ==============================
-st.sidebar.header("🎛️ Filtros")
+# ==========================
+# 🎛️ Filtros en sidebar
+# ==========================
+st.sidebar.header("Filtros")
 
-# Filtro por años
+# Año
 if "Year" in df.columns:
-    min_year, max_year = int(df["Year"].min()), int(df["Year"].max())
-    year_range = st.sidebar.slider("Rango de años", min_year, max_year, (min_year, max_year))
+    years = sorted(df["Year"].dropna().unique())
+    year_range = st.sidebar.slider("Año de publicación", int(min(years)), int(max(years)), (int(min(years)), int(max(years))))
     df = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])]
 
-# Filtro por departamentos
-if "Departamento" in df.columns:
-    departamentos = st.sidebar.multiselect(
-        "Departamentos", sorted(df["Departamento"].dropna().unique())
+# Cuartiles
+if "JCR_Quartile" in df.columns:
+    quartiles = df["JCR_Quartile"].fillna("Sin cuartil").unique().tolist()
+    selected_quartiles = st.sidebar.multiselect("Cuartiles", quartiles, default=quartiles)
+    df = df[df["JCR_Quartile"].fillna("Sin cuartil").isin(selected_quartiles)]
+
+# ==========================
+# 📈 Métricas principales
+# ==========================
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric("Total publicaciones", len(df))
+
+with col2:
+    q1pct = (df["JCR_Quartile"].eq("Q1").mean() * 100) if "JCR_Quartile" in df.columns else 0
+    st.metric("% en Q1", f"{q1pct:.1f}%")
+
+with col3:
+    if "Times Cited" in df.columns:
+        st.metric("Máx. citas", int(df["Times Cited"].max()))
+    else:
+        st.metric("Máx. citas", "—")
+
+with col4:
+    if "DOI" in df.columns:
+        st.metric("Con DOI", df["DOI"].notna().sum())
+    else:
+        st.metric("Con DOI", "—")
+
+# ==========================
+# 🥧 Gráfico de cuartiles
+# ==========================
+if "JCR_Quartile" in df.columns:
+    quartile_counts = df["JCR_Quartile"].fillna("Sin cuartil").value_counts()
+    fig_q = px.pie(
+        names=quartile_counts.index,
+        values=quartile_counts.values,
+        hole=0.4,
+        color=quartile_counts.index,
+        color_discrete_map={
+            "Q1": "green",
+            "Q2": "yellow",
+            "Q3": "orange",
+            "Q4": "darkred",
+            "Sin cuartil": "lightgrey"
+        }
     )
-    if departamentos:
-        df = df[df["Departamento"].isin(departamentos)]
+    fig_q.update_traces(textinfo="percent+label", pull=[0.05]*len(quartile_counts))
+    st.plotly_chart(fig_q, use_container_width=True)
 
-# Filtro por cuartiles
-if "Cuartil_JCR" in df.columns:
-    cuartiles = st.sidebar.multiselect(
-        "Cuartiles JCR", sorted(df["Cuartil_JCR"].dropna().unique())
-    )
-    if cuartiles:
-        df = df[df["Cuartil_JCR"].isin(cuartiles)]
+# ==========================
+# 📜 Tabla de resultados
+# ==========================
+st.subheader("📜 Registros filtrados")
+st.dataframe(df, use_container_width=True)
 
-# Filtro por colaboración
-if "Colaboración" in df.columns:
-    colaboracion = st.sidebar.multiselect(
-        "Tipo de colaboración", sorted(df["Colaboración"].dropna().unique())
-    )
-    if colaboracion:
-        df = df[df["Colaboración"].isin(colaboracion)]
-
-# ==============================
-# TABS PRINCIPALES
-# ==============================
-tab1, tab2, tab3 = st.tabs(["📑 Datos", "📊 Indicadores", "📈 Gráficos"])
-
-# ==============================
-# TAB 1: DATOS
-# ==============================
-with tab1:
-    st.subheader("📑 Vista previa del dataset")
-    st.dataframe(df.head(20), use_container_width=True)
-    st.download_button(
-        "📥 Descargar dataset completo (CSV)",
-        df.to_csv(index=False).encode("utf-8"),
-        "dataset_export.csv",
-        "text/csv"
-    )
-
-# ==============================
-# TAB 2: INDICADORES
-# ==============================
-with tab2:
-    st.subheader("📊 Indicadores clave")
-
-    total_pubs = len(df)
-    q1q2_pct = (
-        (df["Cuartil_JCR"].isin(["Q1", "Q2"]).mean() * 100)
-        if "Cuartil_JCR" in df.columns and len(df) > 0 else None
-    )
-    intl_pct = (
-        (df["Colaboración"].eq("Internacional").mean() * 100)
-        if "Colaboración" in df.columns and len(df) > 0 else None
-    )
-    total_citas = int(df["Citas"].sum()) if "Citas" in df.columns else None
-    avg_jif = round(df["JIF"].mean(), 2) if "JIF" in df.columns else None
-    autores_unicos = (
-        df["Authors"].str.split(";").explode().nunique()
-        if "Authors" in df.columns else None
-    )
-    departamentos = (
-        df["Departamento"].nunique()
-        if "Departamento" in df.columns else None
-    )
-
-    # GRID DE CARDS
-    st.markdown("<div style='display:flex;flex-wrap:wrap;gap:20px;'>", unsafe_allow_html=True)
-
-    def card(label, value, color, emoji=""):
-        if value is None:
-            return ""
-        return f"""
-        <div style="flex:1;min-width:200px;padding:20px;
-                    background:{color};border-radius:12px;
-                    text-align:center;box-shadow:0 4px 8px rgba(0,0,0,0.2);">
-            <div style="font-size:20px;">{emoji} {label}</div>
-            <div style="font-size:28px;font-weight:bold;margin-top:10px;">{value}</div>
-        </div>
-        """
-
-    metrics_html = ""
-    metrics_html += card("Publicaciones", f"{total_pubs:,}", "#1E40AF", "📚")
-    if avg_jif is not None:
-        metrics_html += card("Promedio JIF", avg_jif, "#DC2626", "📈")
-    if q1q2_pct is not None:
-        metrics_html += card("Revistas Q1–Q2", f"{q1q2_pct:.1f}%", "#059669", "⭐")
-    if intl_pct is not None:
-        metrics_html += card("Colaboración internacional", f"{intl_pct:.1f}%", "#2563EB", "🌍")
-    if total_citas is not None:
-        metrics_html += card("Total de citas", f"{total_citas:,}", "#7C3AED", "📝")
-    if autores_unicos is not None:
-        metrics_html += card("Autores únicos", f"{autores_unicos:,}", "#F59E0B", "👨‍🔬")
-    if departamentos is not None:
-        metrics_html += card("Departamentos", departamentos, "#9333EA", "🏥")
-
-    st.markdown(metrics_html, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ==============================
-# TAB 3: GRÁFICOS
-# ==============================
-with tab3:
-    st.subheader("📈 Tendencias de publicación")
-
-    if "Year" in df.columns:
-        pubs_per_year = df.groupby("Year").size().reset_index(name="Publications")
-        fig1 = px.bar(
-            pubs_per_year, x="Year", y="Publications",
-            title="📅 Publicaciones por año",
-            color_discrete_sequence=["#004080"]
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-
-    if "JIF" in df.columns and "Year" in df.columns:
-        df_sorted = df.dropna(subset=["Year", "JIF"]).copy()
-        df_sorted["JIF"] = pd.to_numeric(df_sorted["JIF"], errors="coerce")
-        df_sorted = df_sorted.groupby("Year")["JIF"].mean().reset_index()
-        fig2 = px.line(
-            df_sorted, x="Year", y="JIF",
-            title="📈 Evolución promedio del JIF",
-            markers=True,
-            color_discrete_sequence=["#009688"]
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+# ==========================
+# 💾 Descargar resultados
+# ==========================
+st.download_button("⬇️ Descargar resultados (CSV)", df.to_csv(index=False).encode("utf-8"), "resultados.csv", "text/csv")
