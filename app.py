@@ -3,18 +3,18 @@ import pandas as pd
 import plotly.express as px
 import os
 
-# ========================
+# ============================
 # CONFIGURACIÓN GENERAL
-# ========================
+# ============================
 st.set_page_config(
-    page_title="Dashboard Cienciométrico – CAS-UDD",
+    page_title="Dashboard Cienciométrico – CAS|UDD",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ========================
+# ============================
 # ESTILOS CSS
-# ========================
+# ============================
 st.markdown("""
 <style>
 .block-container {
@@ -28,42 +28,46 @@ h1, h2, h3 {
 .metric-card {
     padding: 20px;
     border-radius: 12px;
-    color: white;
+    background-color: #1e1e1e;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     text-align: center;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    margin-bottom: 1rem;
 }
-.metric-card h2 {
-    font-size: 40px;
-    margin: 0;
+.metric-label {
+    font-size: 16px;
+    color: #ddd;
 }
-.metric-card p {
-    font-size: 18px;
-    margin: 0;
+.metric-value {
+    font-size: 32px;
+    font-weight: bold;
+    color: white;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ========================
+# ============================
 # ENCABEZADO CON LOGO
-# ========================
-st.markdown(
-    """
-    <div style="display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
-        <img src="cas-udd.jpg" alt="Logo CAS-UDD" width="180" style="margin-right:25px;">
-        <div>
-            <h1 style="color:#1E3A8A; margin-bottom:5px;">📊 Dashboard Cienciométrico</h1>
-            <h3 style="color:#444; margin-top:0;">
-                Facultad de Medicina Clínica Alemana – Universidad del Desarrollo
-            </h3>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# ============================
+col1, col2 = st.columns([1,4])
 
-# ========================
+with col1:
+    if os.path.exists("cas-udd.jpg"):
+        st.image("cas-udd.jpg", width=120, caption="CAS–UDD")
+    else:
+        st.warning("⚠️ Logo no encontrado. Asegúrate de guardar 'cas-udd.jpg' en la carpeta del proyecto.")
+
+with col2:
+    st.markdown(
+        """
+        <h1 style='color:#004080; margin-bottom:0;'>📊 Dashboard Cienciométrico</h1>
+        <h3 style='color:#777; margin-top:0;'>Facultad de Medicina Clínica Alemana – Universidad del Desarrollo</h3>
+        """,
+        unsafe_allow_html=True
+    )
+
+# ============================
 # CARGA DE DATOS
-# ========================
+# ============================
 st.sidebar.header("📂 Subir archivo Excel")
 uploaded_file = st.sidebar.file_uploader("Carga el dataset consolidado (.xlsx)", type=["xlsx"])
 
@@ -76,59 +80,56 @@ elif os.path.exists(DEFAULT_FILE):
     df = pd.read_excel(DEFAULT_FILE, dtype=str)
     st.info(f"ℹ️ Usando dataset por defecto: {DEFAULT_FILE}")
 else:
-    st.error("⚠️ No se encontró dataset.")
+    st.error("❌ No se encontró ningún dataset.")
     st.stop()
 
-# ========================
-# INDICADORES CLAVE
-# ========================
-st.markdown("## 📊 Indicadores clave")
+# ============================
+# MÉTRICAS PRINCIPALES
+# ============================
+st.subheader("📊 Indicadores clave")
 
-col1, col2, col3 = st.columns(3)
+# Conversiones de columnas
+df["Year"] = pd.to_numeric(df.get("Year", pd.Series(dtype=str)), errors="coerce")
+df["JIF"] = pd.to_numeric(df.get("JIF", pd.Series(dtype=str)), errors="coerce")
+df["Citations"] = pd.to_numeric(df.get("Citations", pd.Series(dtype=str)), errors="coerce")
 
-with col1:
-    st.markdown(
-        f"""
-        <div class="metric-card" style="background-color:#1E3A8A;">
-            <p>📚 Publicaciones</p>
-            <h2>{len(df):,}</h2>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+total_pubs = len(df)
+q1q2_ratio = (df["Quartile"].isin(["Q1","Q2"]).mean()*100) if "Quartile" in df.columns else None
+intl_collab = (df["International Collaboration"].mean()*100) if "International Collaboration" in df.columns else None
+total_cites = int(df["Citations"].sum()) if "Citations" in df.columns else None
+avg_jif = round(df["JIF"].mean(),2) if "JIF" in df.columns else None
+unique_authors = df["Authors"].nunique() if "Authors" in df.columns else None
+departments = df["Department"].nunique() if "Department" in df.columns else None
 
-with col2:
-    st.markdown(
-        f"""
-        <div class="metric-card" style="background-color:#2E7D32;">
-            <p>⭐ Revistas Q1–Q2</p>
-            <h2>82%</h2>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+cols = st.columns(3)
+with cols[0]:
+    st.markdown(f"<div class='metric-card'><div class='metric-label'>📚 Publicaciones</div><div class='metric-value'>{total_pubs:,}</div></div>", unsafe_allow_html=True)
+with cols[1]:
+    st.markdown(f"<div class='metric-card'><div class='metric-label'>⭐ Revistas Q1-Q2</div><div class='metric-value'>{q1q2_ratio:.0f}%</div></div>", unsafe_allow_html=True)
+with cols[2]:
+    st.markdown(f"<div class='metric-card'><div class='metric-label'>🌍 Colaboración internacional</div><div class='metric-value'>{intl_collab:.0f}%</div></div>", unsafe_allow_html=True)
 
-with col3:
-    st.markdown(
-        f"""
-        <div class="metric-card" style="background-color:#1565C0;">
-            <p>🌍 Colaboración internacional</p>
-            <h2>61%</h2>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+cols = st.columns(3)
+with cols[0]:
+    st.markdown(f"<div class='metric-card'><div class='metric-label'>🔗 Citas totales</div><div class='metric-value'>{total_cites:,}</div></div>", unsafe_allow_html=True)
+with cols[1]:
+    st.markdown(f"<div class='metric-card'><div class='metric-label'>📈 JIF promedio</div><div class='metric-value'>{avg_jif}</div></div>", unsafe_allow_html=True)
+with cols[2]:
+    st.markdown(f"<div class='metric-card'><div class='metric-label'>👩‍🔬 Autores únicos</div><div class='metric-value'>{unique_authors}</div></div>", unsafe_allow_html=True)
 
-# ========================
-# TENDENCIAS DE PUBLICACIÓN
-# ========================
-st.markdown("## 📈 Tendencias de publicación")
+if departments:
+    st.markdown(f"<div class='metric-card'><div class='metric-label'>🏥 Departamentos</div><div class='metric-value'>{departments}</div></div>", unsafe_allow_html=True)
+
+# ============================
+# GRÁFICOS
+# ============================
+st.subheader("📈 Tendencias de publicación")
 
 if "Year" in df.columns:
     pubs_per_year = df.groupby("Year").size().reset_index(name="Publications")
     fig = px.bar(
         pubs_per_year, x="Year", y="Publications",
-        title="📅 Publicaciones por año",
+        title="Publicaciones por año",
         color_discrete_sequence=["#004080"]
     )
     st.plotly_chart(fig, use_container_width=True)
