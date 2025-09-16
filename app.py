@@ -7,24 +7,59 @@ import os
 # CONFIGURACIÓN GENERAL
 # ========================
 st.set_page_config(
-    page_title="Dashboard Cienciométrico — CAS–UDD",
+    page_title="Dashboard Cienciométrico – CAS-UDD",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ========================
-# ENCABEZADO CON LOGO
+# ESTILOS CSS
 # ========================
 st.markdown("""
-<div style="display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
-    <img src="https://upload.wikimedia.org/wikipedia/commons/7/73/Logo_Universidad_del_Desarrollo.png" 
-         alt="Logo UDD" width="120" style="margin-right:20px;">
-    <h1 style="color:#1E3A8A;">📊 Dashboard Cienciométrico</h1>
-</div>
-<h3 style="text-align:center;color:#555;margin-top:-10px;">
-    Facultad de Medicina Clínica Alemana – Universidad del Desarrollo
-</h3>
+<style>
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    max-width: 1400px;
+}
+h1, h2, h3 {
+    font-family: "Segoe UI", sans-serif;
+}
+.metric-card {
+    padding: 20px;
+    border-radius: 12px;
+    color: white;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.metric-card h2 {
+    font-size: 40px;
+    margin: 0;
+}
+.metric-card p {
+    font-size: 18px;
+    margin: 0;
+}
+</style>
 """, unsafe_allow_html=True)
+
+# ========================
+# ENCABEZADO CON LOGO
+# ========================
+st.markdown(
+    """
+    <div style="display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
+        <img src="cas-udd.jpg" alt="Logo CAS-UDD" width="180" style="margin-right:25px;">
+        <div>
+            <h1 style="color:#1E3A8A; margin-bottom:5px;">📊 Dashboard Cienciométrico</h1>
+            <h3 style="color:#444; margin-top:0;">
+                Facultad de Medicina Clínica Alemana – Universidad del Desarrollo
+            </h3>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # ========================
 # CARGA DE DATOS
@@ -41,95 +76,61 @@ elif os.path.exists(DEFAULT_FILE):
     df = pd.read_excel(DEFAULT_FILE, dtype=str)
     st.info(f"ℹ️ Usando dataset por defecto: {DEFAULT_FILE}")
 else:
-    st.warning("⚠️ No se encontró dataset. Se usará un ejemplo.")
-    df = pd.DataFrame({
-        "Year": [2018, 2019, 2020, 2021],
-        "Publications": [120, 150, 210, 300],
-        "JIF": [200, 250, 320, 500]
-    })
+    st.error("⚠️ No se encontró dataset.")
+    st.stop()
 
 # ========================
 # INDICADORES CLAVE
 # ========================
 st.markdown("## 📊 Indicadores clave")
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown(
         f"""
-        <div style="background-color:#1E3A8A;padding:20px;border-radius:12px;text-align:center;color:white;">
-            <h3>📚 Publicaciones</h3>
-            <p style="font-size:32px;font-weight:bold;">{len(df)}</p>
+        <div class="metric-card" style="background-color:#1E3A8A;">
+            <p>📚 Publicaciones</p>
+            <h2>{len(df):,}</h2>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True
+    )
 
 with col2:
     st.markdown(
         f"""
-        <div style="background-color:#065F46;padding:20px;border-radius:12px;text-align:center;color:white;">
-            <h3>⭐ Revistas Q1-Q2</h3>
-            <p style="font-size:32px;font-weight:bold;">82%</p>
+        <div class="metric-card" style="background-color:#2E7D32;">
+            <p>⭐ Revistas Q1–Q2</p>
+            <h2>82%</h2>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True
+    )
 
 with col3:
     st.markdown(
         f"""
-        <div style="background-color:#2563EB;padding:20px;border-radius:12px;text-align:center;color:white;">
-            <h3>🌍 Colaboración internacional</h3>
-            <p style="font-size:32px;font-weight:bold;">61%</p>
+        <div class="metric-card" style="background-color:#1565C0;">
+            <p>🌍 Colaboración internacional</p>
+            <h2>61%</h2>
         </div>
-        """, unsafe_allow_html=True)
-
-st.markdown("---")
+        """,
+        unsafe_allow_html=True
+    )
 
 # ========================
-# GRÁFICOS
+# TENDENCIAS DE PUBLICACIÓN
 # ========================
 st.markdown("## 📈 Tendencias de publicación")
 
 if "Year" in df.columns:
     pubs_per_year = df.groupby("Year").size().reset_index(name="Publications")
-    fig1 = px.bar(
-        pubs_per_year,
-        x="Year",
-        y="Publications",
+    fig = px.bar(
+        pubs_per_year, x="Year", y="Publications",
         title="📅 Publicaciones por año",
-        color_discrete_sequence=["#1E3A8A"]
+        color_discrete_sequence=["#004080"]
     )
-    fig1.update_layout(
-        xaxis_title="Año",
-        yaxis_title="Publicaciones",
-        title_x=0.5,
-        plot_bgcolor="rgba(0,0,0,0)"
-    )
-    st.plotly_chart(fig1, use_container_width=True)
-
-if "JIF" in df.columns:
-    try:
-        df["JIF"] = pd.to_numeric(df["JIF"], errors="coerce")
-        df_sorted = df.dropna(subset=["Year", "JIF"]).sort_values("Year")
-        df_sorted["JIF_cumulative"] = df_sorted["JIF"].cumsum()
-        fig2 = px.line(
-            df_sorted,
-            x="Year",
-            y="JIF_cumulative",
-            title="📈 Evolución acumulada del JIF",
-            markers=True,
-            color_discrete_sequence=["#10B981"]
-        )
-        fig2.update_layout(
-            xaxis_title="Año",
-            yaxis_title="JIF acumulado",
-            title_x=0.5,
-            plot_bgcolor="rgba(0,0,0,0)"
-        )
-        st.plotly_chart(fig2, use_container_width=True)
-    except Exception as e:
-        st.warning(f"⚠️ No se pudo calcular el JIF acumulado: {e}")
-
-# ========================
-# VISTA PREVIA DEL DATASET
-# ========================
-st.markdown("## 📑 Vista previa del dataset")
-st.dataframe(df.head(20))
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("⚠️ No se encontró la columna 'Year' en el dataset.")
