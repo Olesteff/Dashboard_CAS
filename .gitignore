@@ -1,0 +1,29 @@
+# Archivos basura de MacOS
+.DS_Store
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Carpetas de notebooks
+.ipynb_checkpoints/
+
+# Entornos virtuales
+.venv/
+env/
+venv/
+
+# Archivos de VS Code
+.vscode/
+
+# Archivos de logs
+*.log
+
+# Archivos temporales
+*.tmp
+*.swp
+
+# Excel de respaldo (si generas copias)
+~$*.xlsx

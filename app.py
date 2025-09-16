@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import os
 
 # =========================
 # CONFIGURACIÓN DE LA APP
@@ -17,7 +18,7 @@ st.set_page_config(
 st.markdown(
     """
     <div style="display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/Logo_Universidad_del_Desarrollo.png"
+        <img src="https://www.google.com/url?sa=i&url=https%3A%2F%2Fes.wikipedia.org%2Fwiki%2FFacultad_de_Medicina_Cl%25C3%25ADnica_Alemana_-_Universidad_del_Desarrollo&psig=AOvVaw04HqL3sDmCIUy64aw3ILVj&ust=1758079706376000&source=images&cd=vfe&opi=89978449&ved=0CBUQjRxqFwoTCJj86Lar3I8DFQAAAAAdAAAAABAE"
              alt="Logo UDD" width="90" style="margin-right:20px;">
         <h1 style="color:#004080;margin:0;">Dashboard Cienciométrico</h1>
     </div>
@@ -34,15 +35,17 @@ st.markdown(
 st.sidebar.header("📂 Subir archivo Excel")
 uploaded_file = st.sidebar.file_uploader("Carga el dataset consolidado (.xlsx)", type=["xlsx"])
 
+DEFAULT_FILE = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
+
 if uploaded_file:
     df = pd.read_excel(uploaded_file, dtype=str)
     st.success("✅ Dataset cargado correctamente")
+elif os.path.exists(DEFAULT_FILE):
+    df = pd.read_excel(DEFAULT_FILE, dtype=str)
+    st.info(f"ℹ️ Usando dataset por defecto: {DEFAULT_FILE}")
 else:
-    st.warning("⚠️ No se ha cargado ningún dataset. Se usará un ejemplo.")
-    data = {"Year": [2018, 2019, 2020, 2021, 2022, 2023],
-            "Publications": [120, 150, 210, 300, 450, 380],
-            "JIF": [200, 250, 320, 400, 600, 720]}
-    df = pd.DataFrame(data)
+    st.error("❌ No se encontró dataset. Por favor, sube un archivo válido.")
+    st.stop()
 
 # =========================
 # INDICADORES CLAVE
@@ -56,11 +59,11 @@ with col1:
 
 with col2:
     st.markdown("⭐ **Revistas Q1–Q2**")
-    st.metric(label="", value="82%")  # puedes conectar a tu cálculo real
+    st.metric(label="", value="82%")  # TODO: conectar a cálculo real
 
 with col3:
     st.markdown("🌍 **Colaboración internacional**")
-    st.metric(label="", value="61%")  # puedes conectar a tu cálculo real
+    st.metric(label="", value="61%")  # TODO: conectar a cálculo real
 
 # =========================
 # PESTAÑAS
@@ -81,8 +84,11 @@ with tab1:
 # --- TAB 2: Indicadores detallados ---
 with tab2:
     st.subheader("📊 Distribución por año")
-    pubs_per_year = df.groupby("Year").size().reset_index(name="Publications")
-    st.dataframe(pubs_per_year)
+    if "Year" in df.columns:
+        pubs_per_year = df.groupby("Year").size().reset_index(name="Publications")
+        st.dataframe(pubs_per_year)
+    else:
+        st.warning("⚠️ No se encontró la columna 'Year' en el dataset.")
 
 # --- TAB 3: Gráficos ---
 with tab3:
@@ -98,13 +104,18 @@ with tab3:
         )
         st.plotly_chart(fig1, use_container_width=True)
 
-    # JIF acumulado (ejemplo si existe columna JIF)
+    # JIF acumulado (si existe columna JIF)
     if "JIF" in df.columns:
-        df["JIF_cumulative"] = df["JIF"].cumsum()
-        fig2 = px.line(
-            df, x="Year", y="JIF_cumulative",
-            title="📈 Evolución acumulada del JIF",
-            markers=True,
-            color_discrete_sequence=["#009688"]
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+        try:
+            df["JIF"] = pd.to_numeric(df["JIF"], errors="coerce")
+            df_sorted = df.dropna(subset=["Year", "JIF"]).sort_values("Year")
+            df_sorted["JIF_cumulative"] = df_sorted["JIF"].cumsum()
+            fig2 = px.line(
+                df_sorted, x="Year", y="JIF_cumulative",
+                title="📈 Evolución acumulada del JIF",
+                markers=True,
+                color_discrete_sequence=["#009688"]
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+        except Exception as e:
+            st.warning(f"⚠️ No se pudo calcular el JIF acumulado: {e}")
