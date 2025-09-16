@@ -24,6 +24,3 @@ venv/
 # Archivos temporales
 *.tmp
 *.swp
-
-# Excel de respaldo (si generas copias)
-~$*.xlsx
