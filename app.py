@@ -170,7 +170,7 @@ tabs = st.tabs(["📌 Resumen", "📄 Datos", "📚 Revistas", "🧑‍🔬 Auto
 
 # RESUMEN
 with tabs[0]:
-    KP = kpis_summary(dff)
+    KP = _kpis_summary(dff)
     c1,c2,c3,c4,c5 = st.columns(5)
     c1.metric("Nº publicaciones", KP["Nº publicaciones"])
     c2.metric("% OA", KP["% OA"])
