@@ -163,6 +163,7 @@ def normalize_institution(name: str) -> str:
         "pontificia universidad catolica de chile": "Pontificia Universidad Católica de Chile",
         "pontifical catholic university of chile": "Pontificia Universidad Católica de Chile",
         "clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "Clínica Alemana - Universidad del Desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "facultad de medicina clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
@@ -579,12 +580,13 @@ with tabs[8]:
             case=False, na=False
         )]
 
+        # Eliminar "school", "faculty", "department", etc.
         institutions = institutions[~institutions.str.contains(
             r"(school|department|faculty|facultad|division|unidad)", 
             case=False, na=False
         )]
 
-        # Normalizar instituciones
+        # Normalizar nombres (usa la función definida en utils)
         institutions = institutions.apply(normalize_institution)
 
         # Contar las top instituciones
@@ -602,7 +604,7 @@ with tabs[8]:
         st.dataframe(top_institutions)
     else:
         st.info("No se encontraron instituciones en las afiliaciones.")
-    
+
 
 with tabs[9]:
     st.subheader("🌱 Publicaciones por ODS")
