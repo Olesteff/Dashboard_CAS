@@ -208,7 +208,6 @@ def normalize_institution(name: str) -> str:
     return normalization_map.get(key, name.title())
 
 
-
 def normalize_author(name: str) -> str:
     """Normaliza autores: 'Lavados, P.M.' -> 'Lavados, P.' o 'P. Lavados' según convención."""
     if not isinstance(name, str) or not name.strip():
