@@ -85,58 +85,97 @@ def extract_authors_cas(affiliations: str) -> str:
 # =========================
 # Utils
 # =========================
+import unidecode
+
 def _first_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    """Devuelve la primera columna encontrada en df que esté en la lista de candidatos."""
     for c in candidates:
         if c in df.columns:
             return c
     return None
 
+
 def detect_department(affiliation: str) -> str:
-    ...
+    """Clasifica departamentos según palabras clave en las afiliaciones."""
+    if not isinstance(affiliation, str):
+        return "Sin asignar"
+    aff = affiliation.lower()
+    rules = [
+        ("neurolog", "Neurología y Psiquiatría"),
+        ("psiquiatr", "Neurología y Psiquiatría"),
+        ("oncolog", "Oncología"),
+        ("pediatr", "Pediatría"),
+        ("ginecol", "Ginecología y Obstetricia"),
+        ("obstetr", "Ginecología y Obstetricia"),
+        ("medicina interna", "Medicina Interna"),
+        ("internal medicine", "Medicina Interna"),
+        ("trauma", "Traumatología y Ortopedia"),
+        ("ortoped", "Traumatología y Ortopedia"),
+        ("enfermer", "Enfermería"),
+        ("imagen", "Imágenes"),
+        ("radiolog", "Imágenes"),
+        ("urgenc", "Urgencias"),
+        ("cirug", "Cirugía"),
+        ("anestesi", "Anestesiología"),
+        ("cardiol", "Cardiología"),
+    ]
+    for kw, dep in rules:
+        if kw in aff:
+            return dep
     return "Clínica Alemana"
 
+
 def detect_clinical_trial(row: pd.Series) -> bool:
-    ...
+    """Detecta si una publicación es un ensayo clínico a partir de título, abstract o keywords."""
+    text = ""
+    for col in ["Title", "Abstract", "Publication Type", "Keywords"]:
+        if col in row and pd.notna(row[col]):
+            text += " " + str(row[col])
+    text = text.lower()
+    ct_regex = r"(ensayo\s*cl[ií]nico|clinical\s*trial|randomi[sz]ed|phase\s*[i1v]+|double\s*blind|placebo\-controlled)"
     return bool(re.search(ct_regex, text))
 
+
 def extract_authors_cas(affiliations: str) -> str:
-    ...
+    """Extrae autores con afiliación Clínica Alemana (CAS, Clinica Alemana)."""
+    if not isinstance(affiliations, str):
+        return ""
+    parts = re.split(r";|\|", affiliations)
+    cas_authors = []
+    for part in parts:
+        if re.search(r"(CAS|CL[IÍ]NICA\s+ALEMANA)", part, flags=re.I):
+            name = part.split(",")[0].strip()
+            if name:
+                cas_authors.append(name)
     return "; ".join(cas_authors)
 
-import unidecode
 
 def normalize_institution(name: str) -> str:
+    """Normaliza nombres de instituciones para evitar duplicados."""
     if not isinstance(name, str):
         return ""
-    name = unidecode.unidecode(name.lower())
-    name = re.sub(r"[-,_]", " ", name)
-    name = re.sub(r"\s+", " ", name).strip()
 
-    replacements = {
+    key = unidecode.unidecode(name.lower().strip())
+
+    normalization_map = {
         "universidad de chile": "Universidad de Chile",
         "university of chile": "Universidad de Chile",
-        "uchile": "Universidad de Chile",
         "pontificia universidad catolica de chile": "Pontificia Universidad Católica de Chile",
         "pontifical catholic university of chile": "Pontificia Universidad Católica de Chile",
-        "universidad catolica de chile": "Pontificia Universidad Católica de Chile",
-        "clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "Instituto de Ciencias e Innovación en Medicina (ICIM)": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "Instituto De Ciencias E Innovación en Medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "icim": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "Centro De Genetica Y Genomica": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "cegen": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "facultad de medicina clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "School Of Medicine": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "university of development": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "instituto de ciencias e innovacion en medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "icim": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "centro de genetica y genomica": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "cegen": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "hospital clinico universidad de chile": "Hospital Clínico Universidad de Chile",
         "hospital clinico universidad catolica": "Hospital Clínico Universidad Católica",
         "hospital clinico puc": "Hospital Clínico Universidad Católica",
         "hospital clinico": "Hospital Clínico Universidad de Chile",
         "clinica las condes": "Clínica Las Condes",
         "clc": "Clínica Las Condes",
-        "clínica las condes": "Clínica Las Condes",
         "hospital militar": "Hospital Militar de Santiago",
         "hospital militar de santiago": "Hospital Militar de Santiago",
         "red de salud uc christus": "Red de Salud UC Christus",
@@ -144,34 +183,32 @@ def normalize_institution(name: str) -> str:
         "red de salud uc": "Red de Salud UC Christus",
         "red de salud catolica": "Red de Salud UC Christus",
         "red de salud católica": "Red de Salud UC Christus",
-        "red de salud catolica puc": "Red de Salud UC Christus",
-        "red de salud católica puc": "Red de Salud UC Christus",
-        "red de salud catolica chile": "Red de Salud UC Christus",
     }
 
-    for k, v in replacements.items():
-        if k in name:
-            return v
-    return name.title()
+    return normalization_map.get(key, name.title())
+
 
 def normalize_author(name: str) -> str:
-    
+    """Normaliza autores: 'Lavados, P.M.' -> 'Lavados, P.' o 'P. Lavados' según convención."""
     if not isinstance(name, str) or not name.strip():
         return ""
-    
+
     name = name.replace(".", "").strip()
-    
+
     # Caso "Apellido, Nombre"
     if "," in name:
         last, first = [x.strip() for x in name.split(",", 1)]
-        # Si son iniciales -> las dejamos separadas
         if re.fullmatch(r"[A-Z ]+", first, flags=re.I):
             first = " ".join(list(first.replace(" ", "")))
-        return f"{first} {last}".title().strip()
-    
-    # Caso "Nombre Apellido" (ya ordenado)
+        return f"{last}, {first}".title().strip()
+
+    # Caso "Nombre Apellido"
     parts = name.split()
     parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) > 1:
+        last = parts[-1].title()
+        initials = " ".join([p[0].upper() + "." for p in parts[:-1]])
+        return f"{last}, {initials}"
     return " ".join(parts).title()
 
 # =========================
