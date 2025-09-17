@@ -454,7 +454,7 @@ with tabs[4]:
     formatted = re.sub(r"\s+", " ", name.strip())
 
     # Normalizar mayúsculas: primera letra de cada palabra en mayúscula
-    # (sin eliminar "Revista", "Journal", "Medica", etc.)
+    # (sin eliminar palabras como "Revista", "Journal", "Medica", etc.)
     words = formatted.split()
     formatted = " ".join([w.capitalize() if len(w) > 2 else w.lower() for w in words])
 
