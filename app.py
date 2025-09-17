@@ -207,7 +207,7 @@ dff = df.loc[mask].copy()
 # KPIs
 # =========================
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("📚 Publicaciones", len(dff))
+c1.metric("📚 Publicaciones", f"{len(dff)} / {len(df)}")
 c2.metric("🔓 % Open Access", f"{100 * dff['OpenAccess_flag'].mean():.1f}%")
 c3.metric("📈 Suma JIF", f"{dff['Journal Impact Factor'].sum():.1f}")
 c4.metric("🧪 Ensayos clínicos", int(dff["ClinicalTrial_flag"].sum()))
@@ -480,7 +480,6 @@ with tabs[8]:
         st.dataframe(top_institutions)
     else:
         st.info("No se encontraron instituciones en las afiliaciones.")
-
 
 with tabs[10]:
     st.subheader("🌱 Publicaciones por ODS")
