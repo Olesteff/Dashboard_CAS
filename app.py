@@ -576,7 +576,7 @@ with tabs[8]:
 }
 
         # Normalizar nombres
-        def normalize_institution(name: str) -> str:
+      def normalize_institution(name: str) -> str:
             key = re.sub(r"[^a-z ]", "", name.lower())  # quitar tildes y símbolos
             return normalization_map.get(key, name.strip())
 
