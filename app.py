@@ -453,12 +453,24 @@ with tabs[4]:
         # Eliminar espacios extras
         formatted = re.sub(r"\s+", " ", name.strip())
 
-        # Normalizar mayúsculas: primera letra de cada palabra en mayúscula
-        # (sin eliminar palabras como "Revista", "Journal", "Medica", etc.)
-        words = formatted.split()
-        formatted = " ".join([w.capitalize() if len(w) > 2 else w.lower() for w in words])
+        # Normalizar mayúsculas (capitalizar cada palabra)
+        formatted = formatted.title()
 
-        return formatted
+        # Diccionario de normalización manual
+        normalization_map = {
+            "Medica Chile": "Revista Médica de Chile",
+            "Chilena Pediatria": "Revista Chilena de Pediatría",
+            "Chilena Radiologia": "Revista Chilena de Radiología",
+            "Chilena Infectologia": "Revista Chilena de Infectología",
+            "Chilena Obstetricia Y Ginecologia": "Revista Chilena de Obstetricia y Ginecología",
+            "Andes Pediatrica": "Revista Andes Pediátrica",
+            "Chilena Cirugia": "Revista Chilena de Cirugía",
+            "Chilena Anestesia": "Revista Chilena de Anestesia",
+            "Chilena Enfermedades Respiratorias": "Revista Chilena de Enfermedades Respiratorias",
+            "Medica Clinica Las Condes": "Revista Médica Clínica Las Condes",
+        }
+
+        return normalization_map.get(formatted, formatted)
     
     # Aplicar formato a los nombres de revistas
     dff["Journal_formatted"] = dff["Journal_norm"].apply(format_journal_name)
@@ -467,11 +479,13 @@ with tabs[4]:
     journals.columns = ["Revista", "Publicaciones"]
     
     # Crear gráfico con margen izquierdo suficiente
-    fig = px.bar(journals.sort_values("Publicaciones"), 
-                 x="Publicaciones", 
-                 y="Revista", 
-                 orientation="h", 
-                 title="Top 20 Revistas")
+    fig = px.bar(
+        journals.sort_values("Publicaciones"), 
+        x="Publicaciones", 
+        y="Revista", 
+        orientation="h", 
+        title="Top 20 Revistas"
+    )
     
     # Ajustar layout para que los nombres sean visibles
     fig.update_layout(
