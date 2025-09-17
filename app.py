@@ -21,6 +21,18 @@ st.set_page_config(
 )
 
 # =========================
+# TÍTULO VISIBLE EN EL DASHBOARD
+# =========================
+st.markdown("""
+    <div style="background-color:#f0f2f6;padding:25px;border-radius:10px;margin-bottom:25px;border-left:5px solid #1f77b4">
+        <h1 style="color:#1f77b4;text-align:center;margin:0;">📊 Dashboard de Producción Científica</h1>
+        <p style="text-align:center;color:#555;margin:10px 0 0 0;font-size:16px;">
+            Análisis bibliométrico - Clínica Alemana Universidad del Desarrollo
+        </p>
+    </div>
+""", unsafe_allow_html=True)
+
+# =========================
 # Configuración para móviles
 # =========================
 st.markdown(
