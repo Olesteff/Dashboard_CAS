@@ -445,7 +445,6 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("📑 Revistas más frecuentes")
     
-    # Función para formatear nombres de revistas
     def format_journal_name(name: str) -> str:
         if not isinstance(name, str) or not name.strip():
             return "—"
@@ -453,10 +452,30 @@ with tabs[4]:
         # Eliminar espacios extras
         formatted = re.sub(r"\s+", " ", name.strip())
 
-        # Normalizar mayúsculas (capitalizar cada palabra)
-        formatted = formatted.title()
+        # Normalizar mayúsculas: capitalizar cada palabra
+        words = formatted.split()
+        formatted = " ".join([w.capitalize() if len(w) > 2 else w.lower() for w in words])
 
-        # Diccionario de normalización manual
+        # Correcciones para mantener palabras clave intactas
+        corrections = {
+            "De": "de",
+            "La": "la",
+            "El": "el",
+            "Y": "y",
+            "En": "en",
+            "Del": "del",
+            "Los": "los",
+            "Las": "las",
+            "Journal": "Journal",   # Mantener Journal
+            "Revista": "Revista",   # Mantener Revista
+            "Bmj": "BMJ",           # Corrección siglas
+            "Nejm": "NEJM",
+            "Lancet": "The Lancet"
+        }
+        for wrong, right in corrections.items():
+            formatted = formatted.replace(f" {wrong} ", f" {right} ")
+
+        # Diccionario de normalización manual (revistas chilenas)
         normalization_map = {
             "Medica Chile": "Revista Médica de Chile",
             "Chilena Pediatria": "Revista Chilena de Pediatría",
@@ -487,12 +506,12 @@ with tabs[4]:
         title="Top 20 Revistas"
     )
     
-    # Ajustar layout para que los nombres sean visibles
+    # Ajustar layout
     fig.update_layout(
         yaxis=dict(categoryorder='total ascending'),
-        margin=dict(l=300),  # Margen izquierdo más grande
-        height=600,  # Altura suficiente para mostrar todos los nombres
-        yaxis_tickfont=dict(size=12)  # Tamaño de fuente adecuado
+        margin=dict(l=300),
+        height=600,
+        yaxis_tickfont=dict(size=12)
     )
     
     # Mostrar valores dentro de las barras
