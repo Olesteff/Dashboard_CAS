@@ -481,19 +481,6 @@ with tabs[8]:
     else:
         st.info("No se encontraron instituciones en las afiliaciones.")
 
-with tabs[9]:
-    st.subheader("💰 Financiamiento")
-    if "Funding Orgs" in dff.columns:
-        funded = dff["Funding Orgs"].dropna().astype(str)
-        st.metric("📊 % con financiamiento", f"{100 * funded.notna().mean():.1f}%")
-        top_funding = funded.value_counts().head(10).reset_index()
-        top_funding.columns = ["Agencia", "Publicaciones"]
-        st.plotly_chart(px.bar(top_funding.sort_values("Publicaciones"),
-                               x="Publicaciones", y="Agencia", orientation="h",
-                               title="Top agencias financiadoras"), use_container_width=True)
-        st.dataframe(top_funding)
-    else:
-        st.info("No hay información de financiamiento en este dataset.")
 
 with tabs[10]:
     st.subheader("🌱 Publicaciones por ODS")
