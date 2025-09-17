@@ -542,44 +542,7 @@ with tabs[8]:
             case=False, na=False
         )]
 
-        # Diccionario de normalización
-    normalization_map = {
-    "university of chile": "Universidad de Chile",
-    "universidad de chile": "Universidad de Chile",
-    "pontificia universidad catolica de chile": "Pontificia Universidad Católica de Chile",
-    "pontifical catholic university of chile": "Pontificia Universidad Católica de Chile",
-    "clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-    "facultad de medicina clínica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-    "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-    "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-    "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-    "university of development": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-    "Instituto de Ciencias e Innovación en Medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-    "clinica las condes": "Clínica Las Condes",
-    "clínica las condes": "Clínica Las Condes",
-    "clc": "Clínica Las Condes",
-    "hospital militar de santiago": "Hospital Militar de Santiago",
-    "hospital militar": "Hospital Militar de Santiago",
-    "red de salud uc christus": "Red de Salud UC Christus",
-    "uc christus": "Red de Salud UC Christus",
-    "red de salud uc": "Red de Salud UC Christus",
-    "red de salud catolica": "Red de Salud UC Christus",
-    "red de salud católica": "Red de Salud UC Christus",
-    "red de salud catolica puc": "Red de Salud UC Christus",
-    "red de salud católica puc": "Red de Salud UC Christus",
-    "red de salud catolica chile": "Red de Salud UC Christus",
-    "hospital clinico universidad de chile": "Hospital Clínico Universidad de Chile",
-    "hospital del salvador": "Hospital del Salvador",
-    "harvard medical school": "Harvard University",
-    "university of california": "University of California",
-    "university of toronto": "University of Toronto"
-}
-
-        # Normalizar nombres
-      def normalize_institution(name: str) -> str:
-            key = re.sub(r"[^a-z ]", "", name.lower())  # quitar tildes y símbolos
-            return normalization_map.get(key, name.strip())
-
+        # Normalizar instituciones
         institutions = institutions.apply(normalize_institution)
 
         # Contar las top instituciones
@@ -587,14 +550,17 @@ with tabs[8]:
         top_institutions.columns = ["Institución", "Publicaciones"]
 
         st.plotly_chart(
-            px.bar(top_institutions.sort_values("Publicaciones"),
-                   x="Publicaciones", y="Institución", orientation="h",
-                   title="Top Instituciones en Afiliaciones"),
+            px.bar(
+                top_institutions.sort_values("Publicaciones"),
+                x="Publicaciones", y="Institución", orientation="h",
+                title="Top Instituciones en Afiliaciones"
+            ),
             use_container_width=True
         )
         st.dataframe(top_institutions)
     else:
         st.info("No se encontraron instituciones en las afiliaciones.")
+    
 
 with tabs[9]:
     st.subheader("🌱 Publicaciones por ODS")
