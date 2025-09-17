@@ -151,7 +151,6 @@ def extract_authors_cas(affiliations: str) -> str:
     return "; ".join(cas_authors)
 
 
-
 def normalize_institution(name: str) -> str:
     if not isinstance(name, str):
         return ""
@@ -159,17 +158,19 @@ def normalize_institution(name: str) -> str:
     # Normalización básica
     key = unidecode.unidecode(name.lower().strip())
 
-    # Reemplazar cualquier guion raro (– — −) por espacio
+    # Reemplazar guiones raros (– — −) por espacio
     key = re.sub(r"[-–—−]", " ", key)
 
-    # Quitar caracteres no alfabéticos extraños
+    # Quitar caracteres especiales (mantener solo letras, números y espacios)
     key = re.sub(r"[^a-z0-9 ]", " ", key)
 
     # Colapsar espacios múltiples
     key = re.sub(r"\s+", " ", key).strip()
 
     normalization_map = {
+        # =====================
         # Chile
+        # =====================
         "universidad de chile": "Universidad de Chile",
         "university of chile": "Universidad de Chile",
         "uchile": "Universidad de Chile",
@@ -179,35 +180,30 @@ def normalize_institution(name: str) -> str:
         "universidad catolica de chile": "Pontificia Universidad Católica de Chile",
         "uc chile": "Pontificia Universidad Católica de Chile",
 
+        # =====================
         # Clínica Alemana - UDD
-        "clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "Clínica Alemana-Universidad del Desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "facultad de medicina clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "clinica alemana de santiago": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "udd": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "university of development": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "instituto de ciencias e innovacion en medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "icim": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "centro de genetica y genomica": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "cegen": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-                # Clínica Alemana - UDD (todas las variantes, incluida "Universidad del Desarrollo")
-        "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "udd": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        # =====================
         "clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana universidad de desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana universidad deldesarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana universidad d desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "facultad de medicina clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad udd": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana de santiago": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "udd": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "university of development": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "facultad de medicina clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "instituto de ciencias e innovacion en medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "icim": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "centro de genetica y genomica": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "cegen": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
 
+        # =====================
         # Hospitales y clínicas
+        # =====================
         "hospital clinico universidad de chile": "Hospital Clínico Universidad de Chile",
         "hospital clinico universidad catolica": "Hospital Clínico Universidad Católica",
         "hospital clinico puc": "Hospital Clínico Universidad Católica",
@@ -217,7 +213,9 @@ def normalize_institution(name: str) -> str:
         "clinica las condes": "Clínica Las Condes",
         "clc": "Clínica Las Condes",
 
-        # Otros internacionales comunes
+        # =====================
+        # Internacionales comunes
+        # =====================
         "harvard medical school": "Harvard University",
         "harvard univ": "Harvard University",
         "university of california": "University of California",
