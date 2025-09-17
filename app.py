@@ -336,11 +336,132 @@ if text.strip():
         background_color="white",
         stopwords=custom_stopwords
     ).generate(text)
+with tabs[5]:
+    st.subheader("🏥 Autores de Clínica Alemana (CAS)")
+    cas_authors = (
+        dff["Authors_CAS"].fillna("")
+        .astype(str)
+        .str.split(r";")
+        .explode()
+        .str.strip()
+        .replace("", np.nan)
+        .dropna()
+    )
+    if not cas_authors.empty:
+        top_cas = cas_authors.value_counts().head(20).reset_index()
+        top_cas.columns = ["Autor CAS", "Publicaciones"]
 
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.imshow(wc, interpolation="bilinear")
-    ax.axis("off")
-    st.pyplot(fig, use_container_width=True, clear_figure=True)
+        fig = px.bar(
+            top_cas,
+            x="Publicaciones",
+            y="Autor CAS",
+            orientation="h",
+            title="Top Autores CAS",
+        )
+        fig.update_layout(
+            yaxis=dict(categoryorder="total ascending"),
+            margin=dict(l=250),
+            yaxis_tickfont=dict(size=11)
+        )
+        # 👇 Solo mostrar número dentro de la barra
+        fig.update_traces(
+            text=top_cas["Publicaciones"],
+            textposition="inside",
+            insidetextanchor="start"
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(top_cas)
+    else:
+        st.info("No se detectaron autores CAS en las afiliaciones.")
+
+with tabs[6]:
+    st.subheader("☁️ Wordcloud de títulos")
+    try:
+        from wordcloud import WordCloud, STOPWORDS
+        import matplotlib.pyplot as plt
+
+        custom_stopwords = set(STOPWORDS)
+        custom_stopwords.update([
+            # Español
+            "el","la","los","las","un","una","unos","unas","de","del","y","en","por","para","con",
+            # Inglés
+            "the","a","an","of","for","to","with","on","at","by","from","they","their","this","that","these","those"
+        ])
+
+        text = " ".join(dff["Title"].dropna().astype(str).tolist())
+        if text.strip():
+            wc = WordCloud(
+                width=1200, height=500,
+                background_color="white",
+                stopwords=custom_stopwords
+            ).generate(text)
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.imshow(wc, interpolation="bilinear")
+            ax.axis("off")
+            st.pyplot(fig, use_container_width=True, clear_figure=True)
+        else:
+            st.info("No hay títulos para construir la nube.")
+    except Exception:
+        st.info("Instala `wordcloud` para esta pestaña:  `pip install wordcloud`")
+
+
+# =========================
+# Módulo de carga y merge
+# =========================
+def build_match_key(df: pd.DataFrame) -> pd.Series:
+    doi = df.get("DOI", pd.Series([""]*len(df), index=df.index)).fillna("").astype(str)
+    pmid = df.get("PMID", pd.Series([""]*len(df), index=df.index)).fillna("").astype(str)
+    eid = df.get("EID", pd.Series([""]*len(df), index=df.index)).fillna("").astype(str)
+    y = df.get("Year", pd.Series(["-1"]*len(df), index=df.index)).astype(str)
+    t = df.get("Title", pd.Series([""]*len(df), index=df.index)).astype(str).str.lower().str.strip()
+    ty = "TY:" + y + "|" + t
+
+    key = doi.where(doi != "", "PMID:" + pmid)
+    key = key.where(~key.str.startswith("PMID:"), "EID:" + eid)
+    key = key.where(~key.str.startswith("EID:"), ty)
+    return key
+
+def merge_preview(old_df: pd.DataFrame, new_df: pd.DataFrame):
+    old = old_df.copy(); new = new_df.copy()
+    old["_mk"] = build_match_key(old); new["_mk"] = build_match_key(new)
+    old_set = set(k for k in old["_mk"] if isinstance(k,str) and k)
+    new["_is_new"] = ~new["_mk"].isin(old_set)
+    return new
+
+def merge_apply(old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
+    a = old_df.copy(); b = new_df.copy()
+    a["_mk"] = build_match_key(a); b["_mk"] = build_match_key(b)
+    z = pd.concat([a, b], ignore_index=True, sort=False)
+    z["_dedup"] = z["_mk"].fillna("") + "|" + z["Title"].fillna("")
+    z = z.drop_duplicates(subset="_dedup", keep="first").drop(columns=["_dedup"], errors="ignore")
+    return z
+
+with st.sidebar:
+    st.markdown("---")
+    st.header("🔄 Actualizar dataset")
+    new_files = st.file_uploader("Nuevos CSV/XLSX", type=["csv","xlsx"], accept_multiple_files=True)
+    btn_prev  = st.button("👀 Previsualizar unión")
+    btn_apply = st.button("✅ Aplicar actualización", type="primary")
+
+if new_files:
+    tables = []
+    for f in new_files:
+        try:
+            t = pd.read_csv(f, dtype=str) if f.name.lower().endswith(".csv") else pd.read_excel(f, dtype=str)
+            tables.append(normalize_columns(t))
+        except Exception:
+            pass
+    new_df = pd.concat(tables, ignore_index=True, sort=False) if tables else pd.DataFrame()
 else:
-    st.info("No hay títulos para construir la nube.")
+    new_df = pd.DataFrame()
+
+if not new_df.empty and btn_prev:
+    prev = merge_preview(df, new_df)
+    n_new = int(prev["_is_new"].sum())
+    n_dup = int(len(prev) - n_new)
+    st.sidebar.success(f"Vista previa: {n_new} nuevos · {n_dup} duplicados.")
+
+if not new_df.empty and btn_apply:
+    df = merge_apply(df, new_df)
+    st.sidebar.success(f"Unión aplicada. Registros ahora: {len(df):,}")
