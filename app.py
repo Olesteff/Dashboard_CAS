@@ -280,3 +280,4 @@ with tabs[6]:
             st.info("No hay títulos para construir la nube.")
     except Exception:
         st.info("Instala `wordcloud` para esta pestaña:  `pip install wordcloud`")
+        
