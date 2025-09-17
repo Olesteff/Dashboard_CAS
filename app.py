@@ -329,6 +329,14 @@ if not new_df.empty and btn_apply:
             st.sidebar.error(f"No se pudo sobrescribir: {e}")
     df = merged  # usar merged en la app
 
+depart_filter = st.sidebar.multiselect(
+    "Departamento",
+    options=df["Departamento_detectado"].unique(),
+    default=[]
+)
+
+title_filter = st.sidebar.text_input("Buscar en título")
+
 # =========================
 # Filtros
 # =========================
