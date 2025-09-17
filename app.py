@@ -24,10 +24,12 @@ def load_data(path=DEFAULT_XLSX, sheet_name=DEFAULT_SHEET):
     df = pd.read_excel(path, sheet_name=sheet_name)
 
     # Normalización básica
-    if "Year" in df.columns:
-        df["Year"] = pd.to_numeric(df["Year"], errors="coerce").fillna(0).astype(int)
-    else:
-        df["Year"] = 0
+   if "Year" in df.columns:
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    df = df[df["Year"].between(1900, 2100)]  # 🔥 filtra años válidos
+    df["Year"] = df["Year"].astype(int)
+else:
+    df["Year"] = 0
 
     if "Quartile_std" not in df.columns:
         df["Quartile_std"] = "Sin cuartil"
