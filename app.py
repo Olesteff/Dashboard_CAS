@@ -1,147 +1,163 @@
+
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+from io import BytesIO
 
-# =========================
-# Funciones de utilidad
-# =========================
+# ============================
+# CONFIGURACIÓN INICIAL
+# ============================
+st.set_page_config(
+    page_title="Dashboard Producción Científica – CAS-UDD",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ============================
+# FUNCIÓN PARA CARGAR DATASET
+# ============================
+@st.cache_data
 def load_data(file):
-    df = pd.read_excel(file) if file.name.endswith("xlsx") else pd.read_csv(file)
+    df = pd.read_excel(file)
+    # Normalizamos nombres de columnas para evitar problemas
+    df.columns = df.columns.str.strip()
     return df
 
-def detect_department(aff: str) -> str:
-    """Detecta el departamento a partir de texto en Affiliations/Authors with affiliations"""
-    a = str(aff or "").lower()
-    rules = [
-        ("oncolog", "Oncología"),
-        ("pediatr", "Pediatría"),
-        ("neurolog", "Neurología y Psiquiatría"),
-        ("psiquiatr", "Neurología y Psiquiatría"),
-        ("radiolog", "Imágenes"),
-        ("imagen", "Imágenes"),
-        ("ginecol", "Ginecología y Obstetricia"),
-        ("obstet", "Ginecología y Obstetricia"),
-        ("traumatolog", "Traumatología y Ortopedia"),
-        ("ortoped", "Traumatología y Ortopedia"),
-        ("dermatolog", "Dermatología"),
-        ("medicina interna", "Medicina Interna"),
-        ("internal medicine", "Medicina Interna"),
-        ("urgenc", "Urgencias"),
-        ("intensiv", "Cuidados Intensivos"),
-        ("anestesi", "Anestesiología"),
-        ("cardiol", "Cardiología"),
-        ("endocrin", "Endocrinología"),
-        ("nefrol", "Nefrología"),
-        ("neumol", "Neumología"),
-        ("rehabilit", "Rehabilitación"),
-        ("odont", "Odontología"),
-        ("alemana", "Clínica Alemana (General)"),
-        ("universidad del desarrollo", "Clínica Alemana (General)"),
-        ("udd", "Clínica Alemana (General)"),
-    ]
-    for kw, dep in rules:
-        if kw in a:
-            return dep
-    return "Sin asignar"
+# ============================
+# UPLOAD DE ARCHIVO
+# ============================
+st.sidebar.header("📂 Datos base")
+uploaded_file = st.sidebar.file_uploader("Sube un XLSX", type=["xlsx"])
 
-# =========================
-# Interfaz
-# =========================
-st.set_page_config(page_title="Dashboard CAS-UDD", layout="wide")
-st.title("📊 Dashboard de Producción Científica Clínica Alemana – Universidad del Desarrollo")
-
-uploaded_file = st.sidebar.file_uploader("Sube un XLSX", type=["xlsx", "csv"])
 if uploaded_file:
     df = load_data(uploaded_file)
+else:
+    st.warning("⚠️ Por favor, sube un archivo Excel con el dataset consolidado.")
+    st.stop()
 
-    # Normalización de columnas
-    if "Year" not in df.columns:
-        df["Year"] = pd.to_datetime(df["Date"], errors="coerce").dt.year
+# ============================
+# TÍTULO PRINCIPAL
+# ============================
+st.title("📊 Dashboard de Producción Científica – Clínica Alemana – Universidad del Desarrollo")
 
-    if "OpenAccess_flag" not in df.columns:
-        df["OpenAccess_flag"] = False
+# ============================
+# FILTROS
+# ============================
+st.sidebar.subheader("Filtros")
 
-    if "Journal Impact Factor" not in df.columns:
-        df["Journal Impact Factor"] = np.nan
+# Rango de años
+min_year, max_year = int(df["Year"].min()), int(df["Year"].max())
+year_range = st.sidebar.slider("Selecciona rango de años", min_year, max_year, (min_year, max_year))
 
-    if "JCR_Quartile" not in df.columns:
-        df["JCR_Quartile"] = "Sin cuartil"
+# Open Access (usamos OpenAccess_flag con True/False)
+oa_filter = st.sidebar.radio("Open Access", ["Todos", "Solo Open Access", "Solo Closed Access"])
 
-    if "Clinical Trial" not in df.columns:
-        df["Clinical Trial"] = False
+# Cuartiles
+quartiles = df["JCR_Quartile"].dropna().unique().tolist() + ["Sin cuartil"]
+selected_quartiles = st.sidebar.multiselect("Cuartil JCR/SJR", quartiles, default=quartiles)
 
-    # Detectar departamento dinámicamente
-    aff_col = None
-    for cand in ["Authors with affiliations","Author Affiliations","Affiliations"]:
-        if cand in df.columns:
-            aff_col = cand
-            break
-    if aff_col:
-        df["Departamento_detectado"] = df[aff_col].map(detect_department)
+# Departamento dinámico
+departamentos = df.get("Departamento", pd.Series(["Sin asignar"])).fillna("Sin asignar").unique().tolist()
+selected_deptos = st.sidebar.multiselect("Departamento", departamentos, default=departamentos)
+
+# ============================
+# APLICAR FILTROS
+# ============================
+df_filtered = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])]
+
+if oa_filter == "Solo Open Access":
+    df_filtered = df_filtered[df_filtered["OpenAccess_flag"] == True]
+elif oa_filter == "Solo Closed Access":
+    df_filtered = df_filtered[df_filtered["OpenAccess_flag"] == False]
+
+if "JCR_Quartile" in df_filtered.columns:
+    df_filtered["JCR_Quartile"] = df_filtered["JCR_Quartile"].fillna("Sin cuartil")
+    df_filtered = df_filtered[df_filtered["JCR_Quartile"].isin(selected_quartiles)]
+
+if "Departamento" in df_filtered.columns:
+    df_filtered = df_filtered[df_filtered["Departamento"].isin(selected_deptos)]
+
+# ============================
+# KPIs
+# ============================
+total_pubs = len(df_filtered)
+pct_oa = (df_filtered["OpenAccess_flag"].mean() * 100) if "OpenAccess_flag" in df_filtered else 0
+total_jif = df_filtered["Journal Impact Factor"].fillna(0).sum() if "Journal Impact Factor" in df_filtered else 0
+ensayos = df_filtered["Clinical Trial"].sum() if "Clinical Trial" in df_filtered else 0
+
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+kpi1.metric("📑 Total publicaciones", total_pubs)
+kpi2.metric("🔓 % Open Access", f"{pct_oa:.1f}%")
+kpi3.metric("⭐ Suma total JIF", f"{total_jif:,.1f}")
+kpi4.metric("🧪 Ensayos clínicos", int(ensayos))
+
+# ============================
+# PESTAÑAS
+# ============================
+tabs = st.tabs(["📈 Publicaciones", "📊 Cuartiles", "🔓 Open Access", "🏥 Departamentos", "📚 Revistas", "👩‍🔬 Autores", "☁️ Wordcloud"])
+
+# TAB 1: Publicaciones
+with tabs[0]:
+    st.subheader("Publicaciones por año")
+    pubs_year = df_filtered.groupby("Year").size().reset_index(name="Publicaciones")
+    fig = px.bar(pubs_year, x="Year", y="Publicaciones", text="Publicaciones")
+    st.plotly_chart(fig, use_container_width=True)
+
+# TAB 2: Cuartiles
+with tabs[1]:
+    st.subheader("Distribución por cuartil")
+    quartile_counts = df_filtered["JCR_Quartile"].value_counts()
+    fig_q = px.pie(values=quartile_counts.values, names=quartile_counts.index, hole=0.4)
+    st.plotly_chart(fig_q, use_container_width=True)
+    st.dataframe(quartile_counts.reset_index().rename(columns={"index":"Cuartil","JCR_Quartile":"Publicaciones"}))
+
+# TAB 3: Open Access
+with tabs[2]:
+    st.subheader("Distribución Open Access")
+    if "OpenAccess_flag" in df_filtered.columns:
+        oa_counts = df_filtered["OpenAccess_flag"].map({True:"Open Access", False:"Closed Access"}).value_counts()
+        fig_oa = px.pie(values=oa_counts.values, names=oa_counts.index, hole=0.4)
+        st.plotly_chart(fig_oa, use_container_width=True)
+        st.dataframe(oa_counts.reset_index().rename(columns={"index":"Tipo OA","OpenAccess_flag":"Publicaciones"}))
+
+# TAB 4: Departamentos
+with tabs[3]:
+    st.subheader("Distribución por departamento")
+    depto_counts = df_filtered["Departamento"].fillna("Sin asignar").value_counts()
+    fig_d = px.bar(depto_counts, x=depto_counts.index, y=depto_counts.values)
+    st.plotly_chart(fig_d, use_container_width=True)
+    st.dataframe(depto_counts.reset_index().rename(columns={"index":"Departamento","Departamento":"Publicaciones"}))
+
+# TAB 5: Revistas
+with tabs[4]:
+    st.subheader("Top revistas por publicaciones")
+    if "Source title" in df_filtered.columns:
+        top_revistas = df_filtered["Source title"].value_counts().head(20)
+        fig_r = px.bar(top_revistas, x=top_revistas.values, y=top_revistas.index, orientation="h")
+        st.plotly_chart(fig_r, use_container_width=True)
+        st.dataframe(top_revistas.reset_index().rename(columns={"index":"Revista","Source title":"Publicaciones"}))
+
+# TAB 6: Autores
+with tabs[5]:
+    st.subheader("Top autores")
+    if "Authors" in df_filtered.columns:
+        autores = df_filtered["Authors"].dropna().str.split(",").explode().str.strip().value_counts().head(20)
+        fig_a = px.bar(autores, x=autores.values, y=autores.index, orientation="h")
+        st.plotly_chart(fig_a, use_container_width=True)
+        st.dataframe(autores.reset_index().rename(columns={"index":"Autor","Authors":"Publicaciones"}))
+
+# TAB 7: Wordcloud
+with tabs[6]:
+    st.subheader("Nube de palabras de títulos")
+    if "Title" in df_filtered.columns and df_filtered["Title"].dropna().shape[0] > 0:
+        text = " ".join(df_filtered["Title"].dropna().astype(str).tolist())
+        wc = WordCloud(width=800, height=400, background_color="white").generate(text)
+        fig, ax = plt.subplots(figsize=(10,5))
+        ax.imshow(wc, interpolation="bilinear")
+        ax.axis("off")
+        st.pyplot(fig)
     else:
-        df["Departamento_detectado"] = "Sin asignar"
-
-    # =========================
-    # KPIs
-    # =========================
-    total_pubs = len(df)
-    open_pubs = df["OpenAccess_flag"].sum()
-    pct_open = (open_pubs / total_pubs * 100) if total_pubs > 0 else 0
-    suma_jif = df["Journal Impact Factor"].fillna(0).sum()
-    ensayos = df["Clinical Trial"].sum()
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total publicaciones", total_pubs)
-    c2.metric("% Open Access", f"{pct_open:.1f}%")
-    c3.metric("⭐ Suma total JIF", f"{suma_jif:,.1f}")
-    c4.metric("🧪 Ensayos clínicos", ensayos)
-
-    # =========================
-    # Tabs
-    # =========================
-    tabs = st.tabs(["📈 Publicaciones", "📊 Cuartiles", "🔓 Open Access",
-                    "🏥 Departamentos", "📚 Revistas"])
-
-    # --- Publicaciones
-    with tabs[0]:
-        pubs_per_year = df.groupby("Year").size().reset_index(name="Publicaciones")
-        fig = px.bar(pubs_per_year, x="Year", y="Publicaciones", title="Publicaciones por año")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # --- Cuartiles
-    with tabs[1]:
-        qdist = df["JCR_Quartile"].value_counts().reset_index()
-        qdist.columns = ["Cuartil","Publicaciones"]
-        fig = px.pie(qdist, names="Cuartil", values="Publicaciones", hole=0.4,
-                     title="Distribución por cuartil")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(qdist)
-
-    # --- Open Access
-    with tabs[2]:
-        oa_dist = df["OpenAccess_flag"].value_counts().rename({True:"Open Access",False:"Closed Access"}).reset_index()
-        oa_dist.columns = ["Tipo","Publicaciones"]
-        fig = px.pie(oa_dist, names="Tipo", values="Publicaciones", hole=0.4,
-                     title="Distribución Open Access")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(oa_dist)
-
-    # --- Departamentos
-    with tabs[3]:
-        dep_dist = df["Departamento_detectado"].value_counts().reset_index()
-        dep_dist.columns = ["Departamento","Publicaciones"]
-        fig = px.bar(dep_dist, x="Departamento", y="Publicaciones", title="Distribución por departamento")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(dep_dist)
-
-    # --- Revistas
-    with tabs[4]:
-        if "Source title" in df.columns:
-            rev_dist = df["Source title"].value_counts().head(20).reset_index()
-            rev_dist.columns = ["Revista","Publicaciones"]
-            fig = px.bar(rev_dist, x="Revista", y="Publicaciones", title="Top 20 Revistas")
-            st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(rev_dist)
-        else:
-            st.info("No se encontró la columna 'Source title'.")
+        st.info("⚠️ No hay títulos disponibles para generar la nube de palabras.")
