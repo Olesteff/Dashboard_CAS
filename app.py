@@ -417,9 +417,49 @@ with tabs[4]:
     st.dataframe(journals)
 
 
+# Diccionario manual de autores más frecuentes CAS
+AUTHOR_MAP = {
+    "Lavados Pm": "Pablo Lavados",
+    "Weitzel T": "Thomas Weitzel",
+    "Munita Jm": "José Munita",
+    "Slachevsky A": "Andrea Slachevsky",
+    "Cabieses B": "Bárbara Cabieses",
+    "Retamal Ma": "Manuel Retamal",
+    "Ezquer F": "Fernando Ezquer",
+    "Figueroa D": "Daniel Figueroa",
+    "Repetto Gm": "Gonzalo Repetto",
+    "Ezquer M": "Marcela Ezquer",
+    "Wagner E": "Eduardo Wagner",
+    "Figueroa F": "Francisca Figueroa",
+    "Yurac R": "Rafael Yurac",
+    "Delgado I": "Ignacio Delgado",
+    "Undurraga J": "Juan Undurraga",
+    "Olavarría Vv": "Vicente Olavarría",
+    "Calvo R": "Rodrigo Calvo",
+    "Castro A": "Alejandro Castro",
+    "Behrens Mi": "Marcela Behrens",
+    "Porte L": "Luis Porte"
+}
+
+def normalize_author(name: str) -> str:
+    """Normaliza autores usando diccionario o formato abreviado."""
+    if not isinstance(name, str) or not name.strip():
+        return ""
+    
+    key = name.strip().title()
+    if key in AUTHOR_MAP:
+        return AUTHOR_MAP[key]
+    
+    # Si no está en el diccionario → Apellido + iniciales con puntos
+    parts = key.split()
+    apellido = parts[0]
+    iniciales = " ".join([f"{c.upper()}." for c in parts[1]]) if len(parts) > 1 else ""
+    return f"{apellido} {iniciales}".strip()
+
+
 with tabs[5]:
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
-
+    
     # Procesar autores CAS
     cas_authors = (
         dff["Authors_CAS"].fillna("")
@@ -430,15 +470,15 @@ with tabs[5]:
         .replace("", np.nan)
         .dropna()
     )
-
+    
     if not cas_authors.empty:
         # Normalizar autores
         cas_authors_formatted = cas_authors.apply(normalize_author)
-
+        
         top_cas = cas_authors_formatted.value_counts().head(20).reset_index()
         top_cas.columns = ["Autor CAS", "Publicaciones"]
-
-        # Ordenar por número de publicaciones (ascendente para mejor visualización)
+        
+        # Ordenar por publicaciones
         top_cas_sorted = top_cas.sort_values("Publicaciones", ascending=True)
 
         fig = px.bar(
@@ -447,18 +487,17 @@ with tabs[5]:
             y="Autor CAS",
             orientation="h",
             title="Top 20 Autores CAS",
-            text="Publicaciones"  # Mostrar números en las barras
+            text="Publicaciones"
         )
 
         fig.update_layout(
             yaxis=dict(categoryorder='total ascending'),
-            margin=dict(l=300, r=50, t=80, b=50),  # Más espacio a la izquierda
-            height=600,  # Altura suficiente para mostrar todos los nombres
+            margin=dict(l=300, r=50, t=80, b=50),
+            height=600,
             yaxis_tickfont=dict(size=12),
             title_font=dict(size=16)
         )
 
-        # Configurar texto dentro de las barras
         fig.update_traces(
             textposition='inside',
             insidetextanchor='start',
@@ -467,13 +506,7 @@ with tabs[5]:
         )
 
         st.plotly_chart(fig, use_container_width=True)
-
-        # Mostrar dataframe con nombres formateados
-        st.dataframe(
-            top_cas.sort_values("Publicaciones", ascending=False)
-            .reset_index(drop=True)
-            .style.format({"Publicaciones": "{:}"})
-        )
+        st.dataframe(top_cas.sort_values("Publicaciones", ascending=False).reset_index(drop=True))
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
 
