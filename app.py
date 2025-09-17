@@ -103,7 +103,6 @@ def extract_authors_cas(affiliations: str) -> str:
     ...
     return "; ".join(cas_authors)
 
-# 👇 Aquí pegas la nueva función
 import unidecode
 
 def normalize_institution(name: str) -> str:
@@ -122,9 +121,27 @@ def normalize_institution(name: str) -> str:
         "universidad catolica de chile": "Pontificia Universidad Católica de Chile",
         "clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo", "School Of Medicine": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "School Of Medicine": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        # ... (aquí va el resto del diccionario)
+        "university of development": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "hospital clinico universidad de chile": "Hospital Clínico Universidad de Chile",
+        "hospital clinico universidad catolica": "Hospital Clínico Universidad Católica",
+        "hospital clinico puc": "Hospital Clínico Universidad Católica",
+        "hospital clinico": "Hospital Clínico Universidad de Chile",
+        "clinica las condes": "Clínica Las Condes",
+        "clc": "Clínica Las Condes",
+        "clínica las condes": "Clínica Las Condes",
+        "hospital militar": "Hospital Militar de Santiago",
+        "hospital militar de santiago": "Hospital Militar de Santiago",
+        "red de salud uc christus": "Red de Salud UC Christus",
+        "uc christus": "Red de Salud UC Christus",
+        "red de salud uc": "Red de Salud UC Christus",
+        "red de salud catolica": "Red de Salud UC Christus",
+        "red de salud católica": "Red de Salud UC Christus",
+        "red de salud catolica puc": "Red de Salud UC Christus",
+        "red de salud católica puc": "Red de Salud UC Christus",
+        "red de salud catolica chile": "Red de Salud UC Christus",
     }
 
     for k, v in replacements.items():
@@ -132,6 +149,25 @@ def normalize_institution(name: str) -> str:
             return v
     return name.title()
 
+def normalize_author(name: str) -> str:
+    
+    if not isinstance(name, str) or not name.strip():
+        return ""
+    
+    name = name.replace(".", "").strip()
+    
+    # Caso "Apellido, Nombre"
+    if "," in name:
+        last, first = [x.strip() for x in name.split(",", 1)]
+        # Si son iniciales -> las dejamos separadas
+        if re.fullmatch(r"[A-Z ]+", first, flags=re.I):
+            first = " ".join(list(first.replace(" ", "")))
+        return f"{first} {last}".title().strip()
+    
+    # Caso "Nombre Apellido" (ya ordenado)
+    parts = name.split()
+    parts = [p.strip() for p in parts if p.strip()]
+    return " ".join(parts).title()
 
 # =========================
 # Normalización de columnas
@@ -383,29 +419,7 @@ with tabs[4]:
 
 with tabs[5]:
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
-    
-    # Función para formatear nombres de autores
-    def format_author_name(name):
-        if not isinstance(name, str):
-            return ""
-        # Convertir a formato título (primera letra de cada palabra en mayúscula)
-        formatted = name.title()
-        # Corregir conectores comunes en nombres
-        corrections = {
-            "De ": "de ",
-            "La ": "la ",
-            "El ": "el ",
-            "Y ": "y ",
-            "Del ": "del ",
-            "Los ": "los ",
-            "Las ": "las ",
-            "Mc": "Mc",  # Mantener Mc como McDonald
-            "Mac": "Mac"  # Mantener Mac como MacDonald
-        }
-        for wrong, right in corrections.items():
-            formatted = formatted.replace(wrong, right)
-        return formatted
-    
+
     # Procesar autores CAS
     cas_authors = (
         dff["Authors_CAS"].fillna("")
@@ -416,14 +430,14 @@ with tabs[5]:
         .replace("", np.nan)
         .dropna()
     )
-    
+
     if not cas_authors.empty:
-        # Aplicar formato a los nombres de autores
-        cas_authors_formatted = cas_authors.apply(format_author_name)
-        
+        # Normalizar autores
+        cas_authors_formatted = cas_authors.apply(normalize_author)
+
         top_cas = cas_authors_formatted.value_counts().head(20).reset_index()
         top_cas.columns = ["Autor CAS", "Publicaciones"]
-        
+
         # Ordenar por número de publicaciones (ascendente para mejor visualización)
         top_cas_sorted = top_cas.sort_values("Publicaciones", ascending=True)
 
@@ -449,11 +463,11 @@ with tabs[5]:
             textposition='inside',
             insidetextanchor='start',
             textfont=dict(size=11, color='white'),
-            marker_color='#1f77b4'  # Color azul consistente
+            marker_color='#1f77b4'
         )
 
         st.plotly_chart(fig, use_container_width=True)
-        
+
         # Mostrar dataframe con nombres formateados
         st.dataframe(
             top_cas.sort_values("Publicaciones", ascending=False)
@@ -462,7 +476,6 @@ with tabs[5]:
         )
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
-
 
 
 with tabs[6]:
