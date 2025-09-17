@@ -1,194 +1,140 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from pathlib import Path
-import re
 from wordcloud import WordCloud
 from io import BytesIO
+from pathlib import Path
 
-st.set_page_config(
-    page_title="Dashboard Producción Científica CAS–UDD",
-    layout="wide",
-    page_icon="📊"
-)
+st.set_page_config(page_title="Dashboard CAS–UDD", layout="wide")
 
-# ======================
-# Utils
-# ======================
-QUARTILE_CANDS = [
-    "JIF Quartile", "JCR Quartile", "JCI Quartile", "SJR Quartile",
-    "Quartile", "Cuartil", "Quartil"
-]
-
-def _standardize_quartile(val):
-    if pd.isna(val): 
-        return "Sin cuartil"
-    t = str(val).strip().upper()
-    m = re.search(r"Q\s*([1-4])", t)
-    if m:
-        return f"Q{m.group(1)}"
-    if t in {"1","2","3","4"}:
-        return f"Q{t}"
-    return "Sin cuartil"
-
-def attach_quartiles(df: pd.DataFrame) -> pd.DataFrame:
-    cols = [c for c in QUARTILE_CANDS if c in df.columns]
-    if not cols:
-        df["Quartile_std"] = "Sin cuartil"
-        return df
-
-    tmp = df[cols].copy()
-    for c in tmp.columns:
-        tmp[c] = tmp[c].map(_standardize_quartile)
-
-    df["Quartile_std"] = tmp.replace("Sin cuartil", np.nan).bfill(axis=1).iloc[:, 0]
-    df["Quartile_std"] = df["Quartile_std"].fillna("Sin cuartil")
-    return df
-
-def make_wordcloud(text_series, max_words=100):
-    text = " ".join([str(t) for t in text_series.dropna()])
-    if not text:
-        return None
-    wc = WordCloud(
-        width=800, height=400,
-        background_color="white",
-        colormap="Dark2",
-        max_words=max_words
-    ).generate(text)
-    return wc.to_image()
-
-# ======================
-# Load data
-# ======================
 DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
 
-def load_data(uploaded=None):
+# ============================
+# 📥 Carga de datos
+# ============================
+@st.cache_data
+def load_data(uploaded=None, sheet_name=0):
     if uploaded is not None:
-        df = pd.read_excel(uploaded, sheet_name=0)
+        return pd.read_excel(uploaded, sheet_name=sheet_name)
     elif Path(DEFAULT_XLSX).exists():
-        df = pd.read_excel(DEFAULT_XLSX, sheet_name=0)
+        return pd.read_excel(DEFAULT_XLSX, sheet_name=sheet_name)
     else:
         st.error("No se encontró dataset. Sube un archivo XLSX.")
-        st.stop()
-    return df
+        return pd.DataFrame()
 
-st.sidebar.header("📂 Datos base")
-uploaded = st.sidebar.file_uploader("Sube un XLSX", type=["xlsx"])
-df = load_data(uploaded)
-df = attach_quartiles(df)
+df = load_data()
 
-# ======================
-# Filtros
-# ======================
+if df.empty:
+    st.stop()
+
+# Normalización de columnas clave
+if "Year" in df.columns:
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce").fillna(0).astype(int)
+else:
+    st.error("No se encontró columna 'Year' en el dataset.")
+    st.stop()
+
+if "OpenAccess_flag" not in df.columns:
+    df["OpenAccess_flag"] = False
+
+if "JCR_Quartile" not in df.columns:
+    df["JCR_Quartile"] = "Sin cuartil"
+
+# ============================
+# 🎛️ Filtros
+# ============================
 st.sidebar.header("Filtros")
 
-# Año
-if "Year_clean" in df.columns:
-    min_year, max_year = int(df["Year_clean"].min()), int(df["Year_clean"].max())
-else:
-    min_year, max_year = 1975, 2025
-sel_years = st.sidebar.slider(
-    "Selecciona rango de años", min_year, max_year, (min_year, max_year)
+year_min, year_max = int(df["Year"].min()), int(df["Year"].max())
+year_range = st.sidebar.slider("Selecciona rango de años", year_min, year_max, (year_min, year_max))
+
+oa_option = st.sidebar.radio("Open Access", ["Todos", "Open Access", "Closed Access"])
+
+quartiles = st.sidebar.multiselect(
+    "Cuartil JCR",
+    options=["Q1", "Q2", "Q3", "Q4", "Sin cuartil"],
+    default=["Q1", "Q2", "Q3", "Q4", "Sin cuartil"]
 )
 
-# Open Access
-oa_opts = ["Todos", "Open Access", "Closed Access"]
-sel_oa = st.sidebar.radio("Open Access", oa_opts, index=0)
-
-# Cuartiles
-quartile_choices = ["Q1", "Q2", "Q3", "Q4", "Sin cuartil"]
-sel_quart = st.sidebar.multiselect("Cuartil JCR/SJR", quartile_choices, default=quartile_choices)
-
-# Departamentos
+departments = []
 if "Departamento" in df.columns:
-    deps = sorted(df["Departamento"].dropna().unique())
-    sel_dep = st.sidebar.multiselect("Departamento", deps, default=[])
-else:
-    sel_dep = []
+    departments = st.sidebar.multiselect("Departamento", df["Departamento"].dropna().unique())
 
-# Buscar en título
-search_text = st.sidebar.text_input("Buscar en título")
+search_term = st.sidebar.text_input("Buscar en título")
 
-# ======================
-# Aplicar filtros
-# ======================
-mask = (df["Year_clean"].between(sel_years[0], sel_years[1]))
+# ============================
+# 🔎 Aplicar filtros
+# ============================
+dff = df.copy()
+dff = dff[(dff["Year"] >= year_range[0]) & (dff["Year"] <= year_range[1])]
 
-if sel_oa != "Todos" and "OA_flag" in df.columns:
-    mask &= df["OA_flag"].eq(sel_oa)
+if oa_option == "Open Access":
+    dff = dff[dff["OpenAccess_flag"] == True]
+elif oa_option == "Closed Access":
+    dff = dff[dff["OpenAccess_flag"] == False]
 
-if sel_quart:
-    mask &= df["Quartile_std"].isin(sel_quart)
+dff = dff[dff["JCR_Quartile"].fillna("Sin cuartil").isin(quartiles)]
 
-if sel_dep:
-    mask &= df["Departamento"].isin(sel_dep)
+if departments:
+    dff = dff[dff["Departamento"].isin(departments)]
 
-if search_text:
-    mask &= df["Title"].str.contains(search_text, case=False, na=False)
+if search_term:
+    if "Title" in dff.columns:
+        dff = dff[dff["Title"].str.contains(search_term, case=False, na=False)]
 
-dff = df.loc[mask].copy()
-
-# ======================
-# KPIs
-# ======================
+# ============================
+# 📊 KPIs
+# ============================
 st.title("📊 Dashboard de Producción Científica – CAS–UDD")
-st.subheader("📌 Resumen general")
 
 col1, col2 = st.columns(2)
 col1.metric("Total publicaciones", len(dff))
-if "OA_flag" in dff.columns:
-    pct_oa = (dff["OA_flag"].eq("Open Access").mean() * 100).round(1)
-    col2.metric("% Open Access", f"{pct_oa}%")
+oa_pct = 100 * dff["OpenAccess_flag"].mean() if not dff.empty else 0
+col2.metric("% Open Access", f"{oa_pct:.1f}%")
 
-# ======================
-# Tabs
-# ======================
-tabs = st.tabs(["📈 Publicaciones", "📊 Cuartiles", "🔓 Open Access", "☁ Wordcloud"])
+# ============================
+# 📑 Pestañas
+# ============================
+tabs = st.tabs(["📈 Publicaciones", "📊 Cuartiles", "🔓 Open Access", "☁️ Wordcloud"])
 
+# --- Publicaciones ---
 with tabs[0]:
-    st.subheader("Publicaciones por año")
-    if "Year_clean" in dff.columns:
-        pub_year = dff.groupby("Year_clean").size().reset_index(name="Publicaciones")
-        fig = px.bar(pub_year, x="Year_clean", y="Publicaciones")
-        st.plotly_chart(fig, use_container_width=True)
+    pub_year = dff.groupby("Year").size().reset_index(name="Publicaciones")
+    fig = px.bar(pub_year, x="Year", y="Publicaciones", title="Publicaciones por año")
+    st.plotly_chart(fig, use_container_width=True)
 
+# --- Cuartiles ---
 with tabs[1]:
-    st.subheader("Distribución por cuartil")
-    q_counts = dff["Quartile_std"].value_counts().reindex(quartile_choices, fill_value=0)
+    quart_count = dff["JCR_Quartile"].fillna("Sin cuartil").value_counts()
     fig_q = px.pie(
-        values=q_counts.values,
-        names=q_counts.index,
-        hole=0.45,
-        color=q_counts.index,
+        values=quart_count.values,
+        names=quart_count.index,
+        hole=0.4,
+        title="Distribución por cuartil",
+        color=quart_count.index,
         color_discrete_map={
-            "Q1": "#0a7d11",
-            "Q2": "#fffb00",
-            "Q3": "#ffa000",
-            "Q4": "#8b0000",
-            "Sin cuartil": "#cfcfcf"
+            "Q1": "green", "Q2": "yellow", "Q3": "orange", "Q4": "red", "Sin cuartil": "lightgrey"
         }
     )
-    fig_q.update_traces(textinfo="percent+label", pull=[0.03]*len(q_counts))
     st.plotly_chart(fig_q, use_container_width=True)
-    st.dataframe(q_counts.rename("Publicaciones").reset_index().rename(columns={"index":"Cuartil"}))
+    st.dataframe(quart_count.reset_index().rename(columns={"index":"Cuartil", "JCR_Quartile":"Publicaciones"}))
 
+# --- Open Access ---
 with tabs[2]:
-    st.subheader("Evolución de Open Access")
-    if "OA_flag" in dff.columns and "Year_clean" in dff.columns:
-        oa_year = (
-            dff.groupby(["Year_clean","OA_flag"]).size().reset_index(name="Publicaciones")
-        )
-        fig_oa = px.area(oa_year, x="Year_clean", y="Publicaciones", color="OA_flag")
-        st.plotly_chart(fig_oa, use_container_width=True)
+    oa_year = dff.groupby("Year")["OpenAccess_flag"].mean().reset_index()
+    oa_year["% Open Access"] = 100 * oa_year["OpenAccess_flag"]
+    fig_oa = px.line(oa_year, x="Year", y="% Open Access", title="Evolución de % Open Access por año")
+    st.plotly_chart(fig_oa, use_container_width=True)
 
+# --- Wordcloud ---
 with tabs[3]:
-    st.subheader("Nube de palabras (títulos)")
     if "Title" in dff.columns:
-        img = make_wordcloud(dff["Title"])
-        if img:
-            st.image(img)
+        text = " ".join(dff["Title"].dropna().tolist())
+        if text:
+            wc = WordCloud(width=1200, height=600, background_color="black", colormap="viridis").generate(text)
+            st.image(wc.to_array(), caption="Wordcloud de títulos")
         else:
-            st.info("No hay suficientes datos para generar wordcloud.")
-            
+            st.info("No hay títulos para generar el Wordcloud.")
+    else:
+        st.warning("El dataset no contiene columna 'Title'")
