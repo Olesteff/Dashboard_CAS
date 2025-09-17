@@ -447,25 +447,19 @@ with tabs[4]:
     st.subheader("📑 Revistas más frecuentes")
     
     # Función para formatear nombres de revistas
-    def format_journal_name(name):
-        if not isinstance(name, str):
-            return "—"
-        # Convertir a formato título (primera letra de cada palabra en mayúscula)
-        formatted = name.title()
-        # Corregir conectores comunes
-        corrections = {
-            "De": "de",
-            "La": "la",
-            "El": "el",
-            "Y": "y",
-            "En": "en",
-            "Del": "del",
-            "Los": "los",
-            "Las": "las"
-        }
-        for wrong, right in corrections.items():
-            formatted = formatted.replace(f" {wrong} ", f" {right} ")
-        return formatted
+    def format_journal_name(name: str) -> str:
+    if not isinstance(name, str) or not name.strip():
+        return "—"
+
+    # Eliminar espacios extras
+    formatted = re.sub(r"\s+", " ", name.strip())
+
+    # Normalizar mayúsculas: primera letra en mayúscula, resto igual
+    # (esto conserva "Revista", "Journal", "Medica", etc.)
+    words = formatted.split()
+    formatted = " ".join([w.capitalize() if len(w) > 2 else w.lower() for w in words])
+
+    return formatted
     
     # Aplicar formato a los nombres de revistas
     dff["Journal_formatted"] = dff["Journal_norm"].apply(format_journal_name)
