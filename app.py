@@ -117,13 +117,13 @@ def normalize_institution(name: str) -> str:
         "universidad de chile": "Universidad de Chile",
         "university of chile": "Universidad de Chile",
         "uchile": "Universidad de Chile",
-        "pontificia universidad catolica de chile": "PUC Chile",
-        "pontifical catholic university of chile": "PUC Chile",
-        "universidad catolica de chile": "PUC Chile",
-        "clinica alemana universidad del desarrollo": "Clínica Alemana",
-        "clinica alemana": "Clínica Alemana",
-        "alemana clinic": "Clínica Alemana",
-        "universidad del desarrollo": "Universidad del Desarrollo",
+        "pontificia universidad catolica de chile": "Pontificia Universidad Católica de Chile",
+        "pontifical catholic university of chile": "Pontificia Universidad Católica de Chile",
+        "universidad catolica de chile": "Pontificia Universidad Católica de Chile",
+        "clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo", "School Of Medicine": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         # ... (aquí va el resto del diccionario)
     }
 
