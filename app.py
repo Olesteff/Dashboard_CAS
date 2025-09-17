@@ -127,14 +127,16 @@ def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
         kpis["Mediana citas"] = "—"
 
     # Sponsors
-    sponsor_col = _first_col(dff, CAND["sponsor"])
-    if sponsor_col:
-        if dff[sponsor_col].dtype == bool:
-            kpis["Con sponsor"] = f"{int(dff[sponsor_col].sum()):,}"
-        else:
-            kpis["Con sponsor"] = f"{dff[sponsor_col].notna().sum():,}"
+    if "Has_Sponsor" in dff.columns:
+        kpis["Con sponsor"] = f"{int(dff['Has_Sponsor'].sum()):,}"
     else:
-        kpis["Con sponsor"] = "—"
+        kpis["Con sponsor"] = "0"
+
+    # Ensayos clínicos
+    if "ClinicalTrial_flag" in dff.columns:
+        kpis["Ensayos clínicos"] = f"{int(dff['ClinicalTrial_flag'].sum()):,}"
+    else:
+        kpis["Ensayos clínicos"] = "0"
 
     return kpis
 
