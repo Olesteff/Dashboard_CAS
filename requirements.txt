@@ -1,7 +1,18 @@
-streamlit
-pandas
-numpy
-plotly
-openpyxl
-matplotlib
-wordcloud
+# --- Core ---
+streamlit>=1.36
+pandas>=2.2
+numpy>=1.26
+openpyxl>=3.1
+xlsxwriter>=3.2
+
+# --- Visualización ---
+plotly>=5.22
+matplotlib>=3.9
+wordcloud>=1.9
+
+# --- Exportación ---
+kaleido>=0.2.1        # para exportar gráficos Plotly a PNG
+reportlab>=4.2        # para generar PDFs
+
+# --- Utilidades ---
+unidecode>=1.3
