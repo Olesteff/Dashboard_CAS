@@ -254,6 +254,7 @@ with tabs[4]:
     st.plotly_chart(px.bar(journals.sort_values("Publicaciones"), x="Publicaciones", y="Revista", orientation="h", title="Top 20 Revistas"), use_container_width=True)
     st.dataframe(journals)
 
+
 with tabs[5]:
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
     cas_authors = (
@@ -276,11 +277,14 @@ with tabs[5]:
             orientation="h",
             title="Top Autores CAS",
         )
+
         fig.update_layout(
             yaxis=dict(categoryorder="total ascending"),
             margin=dict(l=250),
             yaxis_tickfont=dict(size=11)
         )
+
+        # 👇 Solo mostrar número dentro de la barra
         fig.update_traces(
             text=top_cas["Publicaciones"],
             textposition="inside",
@@ -292,12 +296,14 @@ with tabs[5]:
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
 
+    # Eliminé la sección duplicada que mostraba el mismo contenido dos veces
+
+
 with tabs[6]:
     st.subheader("☁️ Wordcloud de títulos")
     try:
         from wordcloud import WordCloud, STOPWORDS
-        import matplotlib.pyplot as plt
-
+        
         custom_stopwords = set(STOPWORDS)
         custom_stopwords.update([
             # Español
@@ -306,6 +312,7 @@ with tabs[6]:
             "the","a","an","of","for","to","with","on","at","by","from","they","their","this","that","these","those"
         ])
 
+        st.subheader("☁️ Wordcloud de títulos")
         text = " ".join(dff["Title"].dropna().astype(str).tolist())
         if text.strip():
             wc = WordCloud(
@@ -313,14 +320,17 @@ with tabs[6]:
                 background_color="white",
                 stopwords=custom_stopwords
             ).generate(text)
+
+            import matplotlib.pyplot as plt
             fig, ax = plt.subplots(figsize=(10, 4))
             ax.imshow(wc, interpolation="bilinear")
             ax.axis("off")
             st.pyplot(fig, use_container_width=True, clear_figure=True)
         else:
             st.info("No hay títulos para construir la nube.")
-    except Exception:
-        st.info("Instala `wordcloud` para esta pestaña:  `pip install wordcloud`")
+    except ImportError:
+        st.error("Para usar wordcloud, instala: `pip install wordcloud`")
+
 
 # =========================
 # Módulo de carga y merge
@@ -380,4 +390,4 @@ if not new_df.empty and btn_prev:
 
 if not new_df.empty and btn_apply:
     df = merge_apply(df, new_df)
-    st.sidebar.success(f"Unión aplicada. Registros ahora: {len(df)}.")
+    st.sidebar.success(f"Unión aplicada. Registros ahora: {len(df):,}")
