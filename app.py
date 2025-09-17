@@ -270,26 +270,27 @@ with tabs[5]:
         top_cas.columns = ["Autor CAS", "Publicaciones"]
 
         fig = px.bar(
-            top_cas,
-            x="Publicaciones",
-            y="Autor CAS",
-            orientation="h",
-            title="Top Autores CAS",
-        )
-        # 👇 Ajustes para etiquetas visibles
-        fig.update_layout(
-            yaxis=dict(categoryorder="total ascending"),
-            margin=dict(l=250),
-            yaxis_tickfont=dict(size=11)
-        )
-        # 👇 Nombres también dentro de las barras
-        fig.update_traces(
-            text=top_cas["Autor CAS"],
-            textposition="inside",
-            insidetextanchor="start"
-        )
+    top_cas,
+    x="Publicaciones",
+    y="Autor CAS",
+    orientation="h",
+    title="Top Autores CAS",
+)
 
-        st.plotly_chart(fig, use_container_width=True)
+fig.update_layout(
+    yaxis=dict(categoryorder="total ascending"),
+    margin=dict(l=250),
+    yaxis_tickfont=dict(size=11)
+)
+
+# 👇 Solo mostrar número dentro de la barra
+fig.update_traces(
+    text=top_cas["Publicaciones"],
+    textposition="inside",
+    insidetextanchor="start"
+)
+
+st.plotly_chart(fig, use_container_width=True)
         st.dataframe(top_cas)
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
