@@ -417,7 +417,7 @@ with tabs[4]:
     st.dataframe(journals)
 
 
-with tabs[5]:
+wwith tabs[5]:
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
 
     # Procesar autores CAS
@@ -431,14 +431,24 @@ with tabs[5]:
         .dropna()
     )
 
+    def format_to_lastname_initials(name: str) -> str:
+        """
+        Convierte 'Lavados Pm' -> 'Lavados, P.'
+        """
+        if not isinstance(name, str) or not name.strip():
+            return ""
+        parts = name.split()
+        if len(parts) == 1:
+            return parts[0].title()
+        last = parts[0].title()
+        initials = "".join([p[0].upper() + "." for p in parts[1:]])
+        return f"{last}, {initials}"
+
     if not cas_authors.empty:
-        # Normalizar autores
-        cas_authors_formatted = cas_authors.apply(normalize_author)
+        cas_authors_formatted = cas_authors.apply(format_to_lastname_initials)
 
         top_cas = cas_authors_formatted.value_counts().head(20).reset_index()
         top_cas.columns = ["Autor CAS", "Publicaciones"]
-
-        # Ordenar por número de publicaciones (ascendente para mejor visualización)
         top_cas_sorted = top_cas.sort_values("Publicaciones", ascending=True)
 
         fig = px.bar(
@@ -447,18 +457,17 @@ with tabs[5]:
             y="Autor CAS",
             orientation="h",
             title="Top 20 Autores CAS",
-            text="Publicaciones"  # Mostrar números en las barras
+            text="Publicaciones"
         )
 
         fig.update_layout(
             yaxis=dict(categoryorder='total ascending'),
-            margin=dict(l=300, r=50, t=80, b=50),  # Más espacio a la izquierda
-            height=600,  # Altura suficiente para mostrar todos los nombres
+            margin=dict(l=300, r=50, t=80, b=50),
+            height=600,
             yaxis_tickfont=dict(size=12),
             title_font=dict(size=16)
         )
 
-        # Configurar texto dentro de las barras
         fig.update_traces(
             textposition='inside',
             insidetextanchor='start',
@@ -467,12 +476,8 @@ with tabs[5]:
         )
 
         st.plotly_chart(fig, use_container_width=True)
-
-        # Mostrar dataframe con nombres formateados
         st.dataframe(
-            top_cas.sort_values("Publicaciones", ascending=False)
-            .reset_index(drop=True)
-            .style.format({"Publicaciones": "{:}"})
+            top_cas.sort_values("Publicaciones", ascending=False).reset_index(drop=True)
         )
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
