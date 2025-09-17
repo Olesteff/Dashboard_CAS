@@ -4,13 +4,12 @@ import plotly.express as px
 from io import BytesIO
 
 # =========================
-# 📥 Carga de datos
+# 📥 Funciones auxiliares
 # =========================
 @st.cache_data
 def load_default_data():
     file_path = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
-    df = pd.read_excel(file_path)
-    return df
+    return pd.read_excel(file_path)
 
 def normalize_years(df):
     if "Year_clean" in df.columns:
@@ -19,6 +18,12 @@ def normalize_years(df):
         df["Año"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
     df = df.dropna(subset=["Año"])
     return df
+
+def to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Datos_filtrados")
+    return output.getvalue()
 
 # =========================
 # 📂 Importación de dataset
@@ -75,16 +80,9 @@ if quartile_col:
         df = df[df[quartile_col].isin(selected_quartiles)]
 
 # =========================
-# 💾 Botones de descarga
+# 💾 Descarga de datos
 # =========================
 st.sidebar.subheader("Descargar datos filtrados")
-
-def to_excel(df):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Datos_filtrados")
-    return output.getvalue()
-
 csv_data = df.to_csv(index=False).encode("utf-8")
 excel_data = to_excel(df)
 
@@ -103,33 +101,24 @@ st.sidebar.download_button(
 )
 
 # =========================
-# 📊 Layout con tabs
+# 📊 Dashboard
 # =========================
 st.title("📊 Dashboard Producción Científica CAS-UDD")
 
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📌 Resumen general",
-    "📚 Revistas",
-    "🏥 Departamentos",
-    "🔓 Open Access"
-])
+tabs = ["📊 Producción", "📈 Impacto", "🔓 Open Access"]
+dept_col = None
+for cand in ["Departamento", "Department", "Dept", "Main Department"]:
+    if cand in df.columns:
+        dept_col = cand
+        break
+if dept_col:
+    tabs.append("🏥 Departamentos")
 
-# --- Resumen General ---
+tab1, tab2, tab3, *tab4 = st.tabs(tabs)
+
+# --- Producción ---
 with tab1:
-    st.subheader("📌 Resumen General")
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("Total publicaciones", len(df))
-    with col2:
-        pct_oa = (df["OpenAccess_flag"].mean() * 100) if "OpenAccess_flag" in df.columns else 0
-        st.metric("% Open Access", f"{pct_oa:.1f}%")
-    with col3:
-        if "Journal Impact Factor" in df.columns:
-            st.metric("Promedio JIF", f"{df['Journal Impact Factor'].mean():.2f}")
-        else:
-            st.metric("Promedio JIF", "N/A")
-
+    st.subheader("📊 Producción científica")
     pubs_per_year = df.groupby("Año").size().reset_index(name="N° Publicaciones")
     fig_pub_year = px.bar(
         pubs_per_year,
@@ -138,6 +127,10 @@ with tab1:
         title="📈 Publicaciones por año"
     )
     st.plotly_chart(fig_pub_year, use_container_width=True)
+
+# --- Impacto ---
+with tab2:
+    st.subheader("📈 Impacto de las publicaciones")
 
     if "Journal Impact Factor" in df.columns:
         jif_year = df.groupby("Año")["Journal Impact Factor"].mean().reset_index()
@@ -149,61 +142,22 @@ with tab1:
         )
         st.plotly_chart(fig_jif, use_container_width=True)
 
-# --- Revistas ---
-with tab2:
-    st.subheader("📚 Revistas con más publicaciones")
-    if "Source title" in df.columns:
-        top_journals = df["Source title"].value_counts().head(10).reset_index()
-        top_journals.columns = ["Revista", "N° Publicaciones"]
-        fig_journals = px.bar(
-            top_journals,
-            x="Revista",
-            y="N° Publicaciones",
-            text="N° Publicaciones",
-            title="🔝 Top 10 Revistas por publicaciones"
-        )
-        fig_journals.update_traces(textposition="outside")
-        st.plotly_chart(fig_journals, use_container_width=True)
-        st.dataframe(top_journals)
-
-    if "Journal Impact Factor" in df.columns and "Source title" in df.columns:
-        jif_journals = df.groupby("Source title")["Journal Impact Factor"].mean().reset_index()
-        top_jif = jif_journals.sort_values(by="Journal Impact Factor", ascending=False).head(10)
-        fig_top_jif = px.bar(
-            top_jif,
-            x="Source title",
-            y="Journal Impact Factor",
-            title="🔝 Top 10 Revistas por JIF promedio",
-            text="Journal Impact Factor"
-        )
-        fig_top_jif.update_traces(textposition="outside")
-        st.plotly_chart(fig_top_jif, use_container_width=True)
-
-# --- Departamentos ---
-with tab3:
-    st.subheader("🏥 Publicaciones por Departamento")
-    dept_col = None
-    for cand in ["Departamento", "Department", "Dept", "Main Department"]:
-        if cand in df.columns:
-            dept_col = cand
-            break
-
-    if dept_col:
-        dept_counts = df[dept_col].value_counts().reset_index()
-        dept_counts.columns = ["Departamento", "N° Publicaciones"]
-        fig_dept = px.bar(
-            dept_counts.head(15),
-            x="N° Publicaciones",
-            y="Departamento",
-            orientation="h",
-            title="🏥 Top 15 Departamentos por publicaciones"
-        )
-        st.plotly_chart(fig_dept, use_container_width=True)
-        st.dataframe(dept_counts)
+        if "Source title" in df.columns:
+            jif_journals = df.groupby("Source title")["Journal Impact Factor"].mean().reset_index()
+            top_jif = jif_journals.sort_values(by="Journal Impact Factor", ascending=False).head(10)
+            fig_top_jif = px.bar(
+                top_jif,
+                x="Source title",
+                y="Journal Impact Factor",
+                title="🔝 Top 10 Revistas por JIF promedio",
+                text="Journal Impact Factor"
+            )
+            fig_top_jif.update_traces(textposition="outside")
+            st.plotly_chart(fig_top_jif, use_container_width=True)
 
 # --- Open Access ---
-with tab4:
-    st.subheader("🔓 Evolución del Open Access")
+with tab3:
+    st.subheader("🔓 Open Access")
 
     if "OpenAccess_flag" in df.columns:
         oa_trend = df.groupby("Año")["OpenAccess_flag"].mean().reset_index()
@@ -229,3 +183,19 @@ with tab4:
         )
         fig_oa_q.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
         st.plotly_chart(fig_oa_q, use_container_width=True)
+
+# --- Departamentos (si existe la columna) ---
+if dept_col:
+    with tab4[0]:
+        st.subheader("🏥 Publicaciones por Departamento")
+        dept_counts = df[dept_col].value_counts().reset_index()
+        dept_counts.columns = ["Departamento", "N° Publicaciones"]
+        fig_dept = px.bar(
+            dept_counts.head(15),
+            x="N° Publicaciones",
+            y="Departamento",
+            orientation="h",
+            title="🏥 Top 15 Departamentos por publicaciones"
+        )
+        st.plotly_chart(fig_dept, use_container_width=True)
+        st.dataframe(dept_counts)
