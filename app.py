@@ -27,12 +27,24 @@ df = load_data()
 if df.empty:
     st.stop()
 
-# Normalización de columnas esperadas
+# ============================
+# 🧹 Normalización de columnas
+# ============================
 if "Year" not in df.columns:
     st.error("El dataset necesita columna 'Year'")
     st.stop()
 
-df["Year"] = pd.to_numeric(df["Year"], errors="coerce").fillna(0).astype(int)
+# --- Normalizar años ---
+df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+df = df.dropna(subset=["Year"])
+df["Year"] = df["Year"].astype(int)
+df = df[(df["Year"] >= 1900) & (df["Year"] <= 2025)]
+
+if df.empty:
+    st.warning("No hay publicaciones en el rango de años válido (1900–2025).")
+    st.stop()
+
+# --- Normalizar otras columnas ---
 df["OpenAccess_flag"] = df.get("OpenAccess_flag", False)
 df["JCR_Quartile"] = df.get("JCR_Quartile", "Sin cuartil")
 df["Departamento"] = df.get("Departamento", "Sin asignar")
