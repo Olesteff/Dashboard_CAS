@@ -1,12 +1,12 @@
-# /app/app.py
-# Dashboard Cienciométrico con Tabs + Merge/Dedup + PDF (experimental)
+# /app/app_modular.py
+# Dashboard Cienciométrico con Tabs + Departamentos + Ensayos clínicos + Sponsors
 
 from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -103,48 +103,6 @@ def _plotly_png(fig) -> Optional[bytes]:
     except Exception:
         return None
 
-def _make_pdf_report(imgs: Dict[str, bytes], kpis: Dict[str, str]) -> Optional[bytes]:
-    """Crea un PDF simple con KPIs + imágenes. Requiere reportlab. Si no hay imágenes, sólo texto."""
-    try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.utils import ImageReader
-        from reportlab.lib.units import cm
-
-        buf = BytesIO()
-        c = canvas.Canvas(buf, pagesize=A4)
-        W, H = A4
-
-        # Portada
-        c.setFont("Helvetica-Bold", 18)
-        c.drawString(2*cm, H-2.5*cm, "Dashboard Cienciométrico — Resumen")
-        c.setFont("Helvetica", 11)
-        y = H-4*cm
-        for k, v in kpis.items():
-            c.drawString(2*cm, y, f"{k}: {v}")
-            y -= 0.7*cm
-        c.showPage()
-
-        # Páginas de gráficas
-        for title, png in imgs.items():
-            c.setFont("Helvetica-Bold", 14)
-            c.drawString(2*cm, H-2.2*cm, title)
-            if png is not None:
-                img = ImageReader(BytesIO(png))
-                # Ajuste manteniendo margen
-                max_w, max_h = W-3*cm, H-5*cm
-                c.drawImage(img, 1.5*cm, 3*cm, width=max_w, height=max_h, preserveAspectRatio=True, anchor='s')
-            else:
-                c.setFont("Helvetica", 12)
-                c.drawString(2*cm, H-3.5*cm, "(No se pudo renderizar la imagen; instala 'kaleido')")
-            c.showPage()
-
-        c.save()
-        buf.seek(0)
-        return buf.getvalue()
-    except Exception:
-        return None
-
 # -----------------------------
 # Carga (cache)
 # -----------------------------
@@ -194,84 +152,19 @@ def normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
     if ccol and ccol != "Times Cited":
         df["Times Cited"] = pd.to_numeric(df[ccol], errors="coerce")
 
-    pmid_col = _first_col(df, CAND["pmid"])
-    if pmid_col and "PMID_norm" not in df.columns:
-        df["PMID_norm"] = df[pmid_col].astype(str).str.replace(r"\D+", "", regex=True).replace("", np.nan)
-
-    eid_col = _first_col(df, CAND["eid"])
-    if eid_col and "EID" not in df.columns:
-        df["EID"] = df[eid_col].astype(str)
-
-    df["in_PubMed"] = df[pmid_col].notna() if pmid_col else False
-    df["in_WoS"] = df[_first_col(df, CAND["wos"])].notna() if _first_col(df, CAND["wos"]) else False
-    df["in_Scopus"] = False
-    if "Times Cited" in df.columns:
-        df["in_Scopus"] = df["Times Cited"].notna()
-    if "OA_Scopus" in df.columns:
-        df["in_Scopus"] = df["in_Scopus"] | df["OA_Scopus"].notna()
-
-    oa_cols = [c for c in CAND["oa_flags"] if c in df.columns]
-    if oa_cols:
-        oa_any = pd.concat([_bool_from_str_series(df[c]) for c in oa_cols], axis=1).any(axis=1)
-        df["Open Access"] = oa_any.map({True: "OA", False: "No OA"})
-    else:
-        df["Open Access"] = "Desconocido"
-
     return df
 
 # -----------------------------
-# Merge / Deduplicación
-# -----------------------------
-def _build_dedup_key(df_like: pd.DataFrame) -> pd.Series:
-    parts: List[pd.Series] = []
-    if "DOI_norm" in df_like.columns:
-        parts.append(df_like["DOI_norm"].fillna(""))
-    if "PMID_norm" in df_like.columns:
-        parts.append("PMID:" + df_like["PMID_norm"].fillna(""))
-    if "EID" in df_like.columns:
-        parts.append("EID:" + df_like["EID"].astype(str).fillna(""))
-    ycol = _first_col(df_like, CAND["year"])
-    tcol = _first_col(df_like, CAND["title"])
-    if ycol and tcol:
-        y = pd.to_numeric(df_like[ycol], errors="coerce").fillna(-1).astype(int).astype(str)
-        t = df_like[tcol].map(_title_key).fillna("")
-        parts.append("TY:" + y + "|" + t)
-    if not parts:
-        return pd.Series("", index=df_like.index, dtype="object")
-    key = parts[0].astype(str)
-    for p in parts[1:]:
-        key = key.where(key.astype(bool), p.astype(str))
-    return key
-
-def _read_any(file_obj) -> pd.DataFrame:
-    name = (getattr(file_obj, "name", "") or "").lower()
-    try:
-        if name.endswith(".csv"):
-            return pd.read_csv(file_obj, dtype=str)
-        return pd.read_excel(file_obj, dtype=str)
-    except Exception:
-        return pd.DataFrame()
-
-# -----------------------------
-# Sidebar – Carga y Filtros + Merge
+# Sidebar – carga y filtros
 # -----------------------------
 with st.sidebar:
     st.subheader("Datos base")
     up = st.file_uploader("Sube el XLSX (Sheet1)", type=["xlsx"])
     st.caption(f"Por defecto: `{DEFAULT_XLSX}` / hoja `{DEFAULT_SHEET}`")
     st.markdown("---")
-    st.subheader("Actualizar dataset (merge)")
-    new_files = st.file_uploader("Nuevos CSV/XLSX", type=["csv", "xlsx"], accept_multiple_files=True)
-    colA, colB = st.columns([1,1])
-    with colA:
-        btn_preview = st.button("👀 Previsualizar unión")
-    with colB:
-        btn_apply = st.button("✅ Aplicar actualización", type="primary")
-    save_over = st.checkbox("Sobrescribir archivo base al aplicar (si existe)", value=False)
-    st.markdown("---")
     st.subheader("Filtros")
 
-# Carga y normalización inicial
+# Carga inicial
 try:
     base_df = load_dataframe(up)
 except Exception as e:
@@ -280,66 +173,6 @@ except Exception as e:
 
 df = normalize_dataset(base_df)
 
-# Si ya hay df actualizado en sesión, úsalo
-if "__df_updated__" in st.session_state and isinstance(st.session_state["__df_updated__"], pd.DataFrame):
-    df = st.session_state["__df_updated__"]
-
-# Merge preview/apply
-if new_files:
-    # Agregar y normalizar nuevos
-    news: List[pd.DataFrame] = []
-    for f in new_files:
-        t = _read_any(f)
-        if not t.empty:
-            news.append(normalize_dataset(t))
-    new_df = pd.concat(news, ignore_index=True, sort=False) if news else pd.DataFrame()
-
-    if not new_df.empty:
-        pre_keys = _build_dedup_key(df)
-        pre_set = set(k for k in pre_keys if isinstance(k, str) and k)
-        cand_keys = _build_dedup_key(new_df)
-        is_new = cand_keys.map(lambda k: (isinstance(k, str) and k not in pre_set and k != ""))
-
-        if btn_preview:
-            n_new = int(is_new.sum())
-            n_dup = int(len(new_df) - n_new)
-            st.info(f"Vista previa: {n_new} nuevos · {n_dup} duplicados/ignorados.")
-            cols_preview = [c for c in ["Title", "_Year", "DOI_norm", "PMID_norm", "EID"] if c in new_df.columns]
-            st.dataframe(new_df.loc[is_new, cols_preview].head(150), use_container_width=True, height=280)
-
-        if btn_apply:
-            merged = pd.concat([df, new_df], ignore_index=True, sort=False)
-            merged["_dedup_key"] = _build_dedup_key(merged)
-            merged["_title_key"] = merged["Title"].map(_title_key) if "Title" in merged.columns else ""
-            merged["__tmp__"] = merged["_dedup_key"].fillna("") + "|" + merged["_title_key"].fillna("")
-            before = len(merged)
-            merged = merged.drop_duplicates(subset="__tmp__", keep="first").drop(columns=["__tmp__"], errors="ignore")
-            added = merged.shape[0] - df.shape[0]
-            st.success(f"Actualización aplicada: +{max(0, added)} registros nuevos (total {len(merged):,}).")
-
-            # Persistir en sesión
-            st.session_state["__df_updated__"] = merged
-            df = merged
-
-            # Descarga XLSX actualizado
-            xbytes = _df_to_xlsx_bytes(df)
-            if xbytes:
-                st.download_button("⬇️ Descargar dataset ACTUALIZADO (XLSX)", xbytes,
-                                   file_name="dataset_actualizado.xlsx",
-                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                   key="dl_updated_ds")
-
-            # Guardar sobre archivo base
-            if save_over and Path(DEFAULT_XLSX).exists():
-                try:
-                    df.to_excel(DEFAULT_XLSX, index=False)
-                    st.success(f"Sobrescrito `{DEFAULT_XLSX}`.")
-                except Exception as e:
-                    st.error(f"No se pudo sobrescribir: {e}")
-
-# -----------------------------
-# Filtros (sidebar)
-# -----------------------------
 mask = pd.Series(True, index=df.index)
 
 with st.sidebar:
@@ -349,19 +182,10 @@ with st.sidebar:
         y1, y2 = st.slider("Año", y_min, y_max, (y_min, y_max))
         mask &= df["_Year"].astype(float).between(y1, y2)
 
-    src_opts = [c for c in ["in_Scopus", "in_WoS", "in_PubMed"] if c in df.columns]
-    sel_src = st.multiselect("Fuente", options=src_opts, default=src_opts)
-    if sel_src:
-        mask &= df[sel_src].fillna(False).any(axis=1)
-
     if "Open Access" in df.columns:
         oa_vals = ["OA", "No OA", "Desconocido"]
         sel_oa = st.multiselect("Open Access", oa_vals, default=oa_vals)
         mask &= df["Open Access"].isin(sel_oa)
-
-    query = st.text_input("Buscar en título", "")
-    if query and "Title" in df.columns:
-        mask &= df["Title"].fillna("").str.contains(query, case=False, na=False)
 
     if "Departamento" in df.columns and df["Departamento"].notna().any():
         dep_pool = df["Departamento"].dropna().astype(str).str.split(r"\s*;\s*").explode().dropna()
@@ -377,15 +201,11 @@ dff = dff.loc[:, ~pd.Index(dff.columns).duplicated(keep="last")]
 st.subheader(f"Resultados: {len(dff):,}")
 
 # -----------------------------
-# KPIs + figuras (reutilizables)
+# KPIs + figuras
 # -----------------------------
 def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
     kpis: Dict[str, str] = {}
     kpis["Nº publicaciones"] = f"{len(dff):,}"
-    if "DOI_norm" in dff.columns and len(dff):
-        kpis["% con DOI"] = f"{(dff['DOI_norm'].notna().mean() * 100):.1f}%"
-    else:
-        kpis["% con DOI"] = "—"
     if "Open Access" in dff.columns and len(dff):
         kpis["% OA"] = f"{(dff['Open Access'].eq('OA').mean() * 100):.1f}%"
     else:
@@ -396,54 +216,21 @@ def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
         kpis["Mediana citas"] = "—"
     return kpis
 
-def _fig_year_counts(dff: pd.DataFrame):
-    g = dff["_Year"].dropna().astype(int).value_counts().sort_index()
-    return px.bar(x=g.index, y=g.values, labels={"x": "Año", "y": "Nº publicaciones"}, title="Conteo por año")
-
-def _fig_oa_pie(dff: pd.DataFrame):
-    oa_counts = dff["Open Access"].fillna("Desconocido").value_counts()
-    fig = px.pie(names=oa_counts.index, values=oa_counts.values, title="Proporción OA / No OA")
-    fig.update_traces(textinfo="percent+label")
-    return fig
-
 # -----------------------------
 # Tabs
 # -----------------------------
-tabs = st.tabs(["📌 Resumen", "📄 Datos", "📚 Revistas", "🧑‍🔬 Autores", "🟢 OA", "⭐ Citas"])
+tabs = st.tabs([
+    "📌 Resumen", "📄 Datos", "📚 Revistas", "🧑‍🔬 Autores",
+    "🟢 OA", "⭐ Citas", "🏥 Departamentos", "🧪 Ensayos clínicos", "💰 Sponsors"
+])
 
 # RESUMEN
 with tabs[0]:
-    k1, k2, k3, k4 = st.columns(4)
     KP = _kpis_summary(dff)
+    k1, k2, k3 = st.columns(3)
     k1.metric("Nº publicaciones", KP["Nº publicaciones"])
-    k2.metric("% con DOI", KP["% con DOI"])
-    k3.metric("% OA", KP["% OA"])
-    k4.metric("Mediana citas", KP["Mediana citas"])
-
-    imgs: Dict[str, Optional[bytes]] = {}
-
-    st.subheader("📈 Publicaciones por año")
-    if "_Year" in dff.columns and dff["_Year"].notna().any():
-        fig_year = _fig_year_counts(dff)
-        st.plotly_chart(fig_year, use_container_width=True)
-        png = _plotly_png(fig_year); imgs["Publicaciones por año"] = png
-        if png:
-            st.download_button("⬇️ PNG — Publicaciones por año", png, "pubs_por_anio.png", "image/png")
-
-    st.subheader("🟢 Open Access (resumen)")
-    if "Open Access" in dff.columns and len(dff):
-        fig_oa = _fig_oa_pie(dff)
-        st.plotly_chart(fig_oa, use_container_width=True)
-        png = _plotly_png(fig_oa); imgs["Open Access"] = png
-        if png:
-            st.download_button("⬇️ PNG — OA", png, "open_access.png", "image/png")
-
-    # PDF (experimental)
-    pdf_bytes = _make_pdf_report({k: v for k, v in imgs.items() if v is not None}, KP)
-    if pdf_bytes:
-        st.download_button("⬇️ PDF — Reporte resumido", pdf_bytes, "reporte_dashboard.pdf", "application/pdf")
-    else:
-        st.caption("Para PDF con imágenes instala `reportlab` y `kaleido` (opcional).")
+    k2.metric("% OA", KP["% OA"])
+    k3.metric("Mediana citas", KP["Mediana citas"])
 
 # DATOS
 with tabs[1]:
@@ -458,58 +245,56 @@ with tabs[1]:
 
 # REVISTAS
 with tabs[2]:
-    st.subheader("Top 20 Revistas")
-    jr_col = "Journal_norm" if "Journal_norm" in dff.columns else _first_col(dff, CAND["journal"])
-    if jr_col and dff[jr_col].notna().any():
-        top_jr = dff[jr_col].fillna("—").value_counts().head(20).rename_axis("Journal").reset_index(name="N")
-        fig_jr = px.bar(top_jr.sort_values("N"), x="N", y="Journal", orientation="h", title="Top 20 revistas")
-        st.plotly_chart(fig_jr, use_container_width=True)
-        st.dataframe(top_jr, use_container_width=True, height=420)
-        png = _plotly_png(fig_jr)
-        if png:
-            st.download_button("⬇️ PNG — Top revistas", png, "top_revistas.png", "image/png")
-    else:
-        st.info("No hay columna de revista.")
+    if "Journal_norm" in dff.columns:
+        top_jr = dff["Journal_norm"].fillna("—").value_counts().head(15).rename_axis("Journal").reset_index(name="N")
+        fig = px.bar(top_jr.sort_values("N"), x="N", y="Journal", orientation="h", title="Top 15 revistas")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(top_jr)
 
 # AUTORES
 with tabs[3]:
-    st.subheader("Top 20 Autores")
-    acol = "Author Full Names" if "Author Full Names" in dff.columns else _first_col(dff, CAND["authors"])
-    if acol and dff[acol].notna().any():
-        s = dff[acol].dropna().astype(str).str.split(";")
+    if "Author Full Names" in dff.columns:
+        s = dff["Author Full Names"].dropna().astype(str).str.split(";")
         authors = [a.strip() for sub in s for a in sub if a.strip()]
-        top_auth = pd.Series(authors).value_counts().head(20).rename_axis("Autor").reset_index(name="N° Publicaciones")
-        fig_auth = px.bar(top_auth.sort_values("N° Publicaciones"), x="N° Publicaciones", y="Autor",
-                          orientation="h", title="Top 20 autores")
-        st.plotly_chart(fig_auth, use_container_width=True)
-        st.dataframe(top_auth, use_container_width=True, height=420)
-        png = _plotly_png(fig_auth)
-        if png:
-            st.download_button("⬇️ PNG — Top autores", png, "top_autores.png", "image/png")
-    else:
-        st.info("No hay columna de autores.")
+        top_auth = pd.Series(authors).value_counts().head(15).rename_axis("Autor").reset_index(name="N")
+        fig = px.bar(top_auth.sort_values("N"), x="N", y="Autor", orientation="h", title="Top 15 autores")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(top_auth)
 
 # OA
 with tabs[4]:
-    st.subheader("Open Access")
-    if "Open Access" in dff.columns and len(dff):
-        fig_oa = _fig_oa_pie(dff)
-        st.plotly_chart(fig_oa, use_container_width=True)
-        png = _plotly_png(fig_oa)
-        if png:
-            st.download_button("⬇️ PNG — OA", png, "open_access.png", "image/png")
-        st.dataframe(dff[["Title", "_Year", "Open Access"]].dropna(how="all"), use_container_width=True, height=420)
-    else:
-        st.info("No hay columna de OA.")
+    if "Open Access" in dff.columns:
+        oa_counts = dff["Open Access"].value_counts()
+        fig = px.pie(names=oa_counts.index, values=oa_counts.values, title="Distribución Open Access")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(dff[["_Year", "Title", "Open Access"]])
 
 # CITAS
 with tabs[5]:
-    st.subheader("Más citadas")
     if "Times Cited" in dff.columns:
         tmp = dff.copy()
         tmp["Times Cited"] = pd.to_numeric(tmp["Times Cited"], errors="coerce")
         top_cited = tmp.sort_values("Times Cited", ascending=False).head(20)
-        cols_show = [c for c in ["Title", "Author Full Names", "Times Cited", "_Year", "DOI_norm"] if c in top_cited.columns]
-        st.dataframe(top_cited[cols_show], use_container_width=True, height=520)
-    else:
-        st.info("No hay columna de citas (‘Times Cited’/‘Cited by’).")
+        st.dataframe(top_cited[["Title","Author Full Names","Times Cited","_Year"]])
+
+# DEPARTAMENTOS
+with tabs[6]:
+    if "Departamento" in dff.columns:
+        top_dep = dff["Departamento"].fillna("—").value_counts().head(15).rename_axis("Departamento").reset_index(name="N")
+        fig = px.bar(top_dep.sort_values("N"), x="N", y="Departamento", orientation="h", title="Top 15 departamentos")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(top_dep)
+
+# ENSAYOS CLÍNICOS
+with tabs[7]:
+    if "ClinicalTrial_flag" in dff.columns:
+        trials = dff[dff["ClinicalTrial_flag"] == True]
+        st.metric("Nº Ensayos clínicos", len(trials))
+        st.dataframe(trials[["Title","_Year","Journal_norm","Departamento"]].head(50))
+
+# SPONSORS
+with tabs[8]:
+    if "Has_Sponsor" in dff.columns:
+        sponsor_df = dff[dff["Has_Sponsor"] == True]
+        st.metric("Nº publicaciones con sponsor", len(sponsor_df))
+        st.dataframe(sponsor_df[["Title","_Year","Journal_norm","Departamento","Funding_info"]].head(50))
