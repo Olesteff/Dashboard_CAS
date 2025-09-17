@@ -255,23 +255,44 @@ with tabs[4]:
     st.dataframe(journals)
 
 with tabs[5]:
-    st.subheader("👥 Autores más frecuentes")
-    authors = (
-        dff["Authors_norm"].fillna("")
+    st.subheader("🏥 Autores de Clínica Alemana (CAS)")
+    cas_authors = (
+        dff["Authors_CAS"].fillna("")
         .astype(str)
-        .str.split(r";|,|\|")
+        .str.split(r";")
         .explode()
         .str.strip()
         .replace("", np.nan)
         .dropna()
     )
-    if not authors.empty:
-        top_authors = authors.value_counts().head(30).reset_index()
-        top_authors.columns = ["Autor", "Publicaciones"]
-        st.plotly_chart(px.bar(top_authors.sort_values("Publicaciones"), x="Publicaciones", y="Autor", orientation="h", title="Top 30 Autores"), use_container_width=True)
-        st.dataframe(top_authors)
+    if not cas_authors.empty:
+        top_cas = cas_authors.value_counts().head(20).reset_index()
+        top_cas.columns = ["Autor CAS", "Publicaciones"]
+
+        fig = px.bar(
+            top_cas,
+            x="Publicaciones",
+            y="Autor CAS",
+            orientation="h",
+            title="Top Autores CAS",
+        )
+        # 👇 Ajustes para etiquetas visibles
+        fig.update_layout(
+            yaxis=dict(categoryorder="total ascending"),
+            margin=dict(l=250),
+            yaxis_tickfont=dict(size=11)
+        )
+        # 👇 Nombres también dentro de las barras
+        fig.update_traces(
+            text=top_cas["Autor CAS"],
+            textposition="inside",
+            insidetextanchor="start"
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(top_cas)
     else:
-        st.info("No hay autores parseables.")
+        st.info("No se detectaron autores CAS en las afiliaciones.")
 
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
     cas_authors = (
