@@ -242,10 +242,9 @@ tabs = st.tabs([
     "📑 Revistas", 
     "👥 Autores", 
     "☁️ Wordcloud",
-    "📖 Citas",            # 👈 NUEVA
-    "🌍 Colaboración",     # 👈 NUEVA
-    "💰 Financiamiento",   # 👈 NUEVA
-    "🌱 ODS"               # 👈 NUEVA
+    "📖 Citas",
+    "🌍 Colaboración",
+    "🌱 ODS"
 ])
 
 with tabs[0]:
