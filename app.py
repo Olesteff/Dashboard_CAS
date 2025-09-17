@@ -254,6 +254,7 @@ with tabs[4]:
     st.plotly_chart(px.bar(journals.sort_values("Publicaciones"), x="Publicaciones", y="Revista", orientation="h", title="Top 20 Revistas"), use_container_width=True)
     st.dataframe(journals)
 
+
 with tabs[5]:
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
     cas_authors = (
@@ -270,27 +271,27 @@ with tabs[5]:
         top_cas.columns = ["Autor CAS", "Publicaciones"]
 
         fig = px.bar(
-    top_cas,
-    x="Publicaciones",
-    y="Autor CAS",
-    orientation="h",
-    title="Top Autores CAS",
-)
+            top_cas,
+            x="Publicaciones",
+            y="Autor CAS",
+            orientation="h",
+            title="Top Autores CAS",
+        )
 
-fig.update_layout(
-    yaxis=dict(categoryorder="total ascending"),
-    margin=dict(l=250),
-    yaxis_tickfont=dict(size=11)
-)
+        fig.update_layout(
+            yaxis=dict(categoryorder="total ascending"),
+            margin=dict(l=250),
+            yaxis_tickfont=dict(size=11)
+        )
 
-# 👇 Solo mostrar número dentro de la barra
-fig.update_traces(
-    text=top_cas["Publicaciones"],
-    textposition="inside",
-    insidetextanchor="start"
-)
+        # 👇 Solo mostrar número dentro de la barra
+        fig.update_traces(
+            text=top_cas["Publicaciones"],
+            textposition="inside",
+            insidetextanchor="start"
+        )
 
-st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
         st.dataframe(top_cas)
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
@@ -313,18 +314,33 @@ st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
 
+
 with tabs[6]:
     st.subheader("☁️ Wordcloud de títulos")
     try:
-        from wordcloud import WordCloud
-        import matplotlib.pyplot as plt
-        text = " ".join(dff["Title"].dropna().astype(str).tolist())
-        if text.strip():
-            wc = WordCloud(width=1200, height=500, background_color="white").generate(text)
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.imshow(wc, interpolation="bilinear"); ax.axis("off")
-            st.pyplot(fig, use_container_width=True, clear_figure=True)
-        else:
-            st.info("No hay títulos para construir la nube.")
-    except Exception:
-        st.info("Instala `wordcloud` para esta pestaña:  `pip install wordcloud`")
+        from wordcloud import WordCloud, STOPWORDS
+
+custom_stopwords = set(STOPWORDS)
+custom_stopwords.update([
+    # Español
+    "el","la","los","las","un","una","unos","unas","de","del","y","en","por","para","con",
+    # Inglés
+    "the","a","an","of","for","to","with","on","at","by","from","they","their","this","that","these","those"
+])
+
+st.subheader("☁️ Wordcloud de títulos")
+text = " ".join(dff["Title"].dropna().astype(str).tolist())
+if text.strip():
+    wc = WordCloud(
+        width=1200, height=500,
+        background_color="white",
+        stopwords=custom_stopwords
+    ).generate(text)
+
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.imshow(wc, interpolation="bilinear")
+    ax.axis("off")
+    st.pyplot(fig, use_container_width=True, clear_figure=True)
+else:
+    st.info("No hay títulos para construir la nube.")
