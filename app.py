@@ -525,36 +525,34 @@ with tabs[7]:
 with tabs[8]:
     st.subheader("🌍 Colaboración internacional (instituciones en afiliaciones)")
     if "Affiliations" in dff.columns:
-        # Normalizamos afiliaciones en texto
+        # Normalizamos afiliaciones
         affils = dff["Affiliations"].dropna().astype(str)
-        
+
         # Dividir por ; o , para separar instituciones
         institutions = affils.str.split(r";|,").explode().str.strip()
-        
-        # Filtrar solo instituciones relevantes
+
+        # Filtrar instituciones relevantes
         institutions = institutions[institutions.str.contains(
-            r"(univ|universidad|hospital|clinic|institute|school|center|centre)", 
+            r"(univ|universidad|hospital|clinic|institut|centre|centro)", 
             case=False, na=False
         )]
-        
-        # 👇 Aplicar normalización para unificar nombres
-        institutions = institutions.apply(normalize_institution)
-        
-        # Contar top instituciones
+
+        # Excluir ruidos comunes (School, Department, Faculty...)
+        institutions = institutions[~institutions.str.contains(
+            r"(school|department|facultad|division|unidad)", 
+            case=False, na=False
+        )]
+
+        # Contar las top instituciones
         top_institutions = institutions.value_counts().head(15).reset_index()
         top_institutions.columns = ["Institución", "Publicaciones"]
 
-        # Mostrar gráfico
         st.plotly_chart(
-            px.bar(
-                top_institutions.sort_values("Publicaciones"),
-                x="Publicaciones", y="Institución", orientation="h",
-                title="Top Instituciones en Afiliaciones"
-            ),
+            px.bar(top_institutions.sort_values("Publicaciones"),
+                   x="Publicaciones", y="Institución", orientation="h",
+                   title="Top Instituciones en Afiliaciones"),
             use_container_width=True
         )
-
-        # Mostrar tabla
         st.dataframe(top_institutions)
     else:
         st.info("No se encontraron instituciones en las afiliaciones.")
