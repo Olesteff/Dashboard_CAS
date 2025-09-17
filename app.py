@@ -1,190 +1,220 @@
-import streamlit as st
-import pandas as pd
+# /app/app.py
+# Dashboard Cienciométrico con Tabs + Merge/Dedup + PDF
+
+from __future__ import annotations
+from io import BytesIO
+from pathlib import Path
+import re
+from typing import Dict, List, Optional
+
 import numpy as np
+import pandas as pd
 import plotly.express as px
-import matplotlib.pyplot as plt
+import streamlit as st
 from wordcloud import WordCloud
-import unicodedata as ud
-from typing import Dict
+import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Dashboard CAS", layout="wide")
+# -----------------------------
+# Configuración general
+# -----------------------------
+st.set_page_config(
+    page_title="Dashboard Cienciométrico",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-# ======================================
-# Funciones auxiliares
-# ======================================
-def _first_col(df, candidates):
-    for c in candidates:
+DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
+DEFAULT_SHEET = "Sheet1"
+
+DOI_REGEX = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.I)
+
+CAND = {
+    "title": ["Title", "Document Title", "TI"],
+    "year": ["Year", "Publication Year", "PY", "_Year"],
+    "doi": ["DOI", "Doi"],
+    "link": ["Link", "URL", "Full Text URL"],
+    "journal": ["Journal_norm", "Source title", "Publication Name"],
+    "dept": ["Departamento", "Dept_CAS_list", "Dept_FMUDD_list"],
+    "authors": ["Author full names", "Author Full Names", "Authors"],
+    "cited": ["Cited by", "Times Cited"],
+    "pmid": ["PubMed ID", "PMID"],
+    "wos": ["Web of Science Record", "Unique WOS ID"],
+    "eid": ["EID", "Scopus EID"],
+    "oa_flags": ["OpenAccess_flag", "OA_Scopus", "OA_WoS", "OA_PubMed", "OA"],
+    "quartile": ["JCR_Quartile", "Quartile", "JCR Quartile"]
+}
+
+# -----------------------------
+# Utilidades
+# -----------------------------
+def _first_col(df: pd.DataFrame, names: List[str]) -> Optional[str]:
+    for c in names:
         if c in df.columns:
             return c
     return None
 
-CAND = {
-    "year": ["Year", "Año", "PY"],
-    "oa": ["Open Access", "OA"],
-    "quartile": ["JCR_Quartile", "Quartile", "Q"],
-    "sponsor": ["Has_Sponsor"],
-    "clinical": ["ClinicalTrial_flag"],
-    "title": ["Title", "Article Title", "Título"],
-    "cites": ["Times Cited", "Cited by"],
-}
+def _extract_doi(val: object) -> Optional[str]:
+    if pd.isna(val): return None
+    m = DOI_REGEX.search(str(val))
+    return m.group(0).lower() if m else None
 
+def _norm_text(s: object) -> str:
+    if pd.isna(s): return ""
+    return re.sub(r"\s+", " ", str(s).strip())
+
+def _title_key(s: object) -> str:
+    if pd.isna(s): return ""
+    t = re.sub(r"[^A-Za-z0-9 ]", " ", str(s).lower())
+    return re.sub(r"\s+", " ", t).strip()
+
+def _bool_from_str_series(s: pd.Series) -> pd.Series:
+    if s is None:
+        return pd.Series(False, index=pd.RangeIndex(0))
+    x = s.astype(str).str.lower().str.strip()
+    true_vals = {"1", "true", "t", "yes", "y", "si", "sí"}
+    return x.isin(true_vals)
+
+def _df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Datos") -> Optional[bytes]:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        df.to_excel(w, index=False, sheet_name=sheet_name)
+    buf.seek(0)
+    return buf.getvalue()
+
+# -----------------------------
+# Carga
+# -----------------------------
+@st.cache_data(show_spinner=False)
+def load_dataframe(uploaded, sheet_name=DEFAULT_SHEET) -> pd.DataFrame:
+    if uploaded is not None:
+        return pd.read_excel(uploaded, sheet_name=sheet_name, dtype=str)
+    if Path(DEFAULT_XLSX).exists():
+        return pd.read_excel(DEFAULT_XLSX, sheet_name=sheet_name, dtype=str)
+    st.stop()
+
+def normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    ycol = _first_col(df, CAND["year"])
+    if ycol: df["_Year"] = pd.to_numeric(df[ycol], errors="coerce").astype("Int64")
+    qcol = _first_col(df, CAND["quartile"])
+    if qcol: df["JCR_Quartile"] = df[qcol]
+    oa_cols = [c for c in CAND["oa_flags"] if c in df.columns]
+    if oa_cols: df["Open Access"] = df[oa_cols].apply(lambda r: any(_bool_from_str_series(r)), axis=1)
+    else: df["Open Access"] = False
+    return df
+
+# -----------------------------
+# KPIs
+# -----------------------------
 def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
     kpis: Dict[str, str] = {}
     kpis["Nº publicaciones"] = f"{len(dff):,}"
-
-    # %OA
-    if "Open Access" in dff.columns and len(dff):
-        kpis["% OA"] = f"{(dff['Open Access'].eq('OA').mean() * 100):.1f}%"
-    else:
-        kpis["% OA"] = "—"
-
-    # Citas
-    ccol = _first_col(dff, CAND["cites"])
-    if ccol:
-        kpis["Mediana citas"] = f"{pd.to_numeric(dff[ccol], errors='coerce').median():.0f}"
-    else:
-        kpis["Mediana citas"] = "—"
-
-    # Sponsors
-    scol = _first_col(dff, CAND["sponsor"])
-    if scol:
-        kpis["Con sponsor"] = f"{int(dff[scol].sum()):,}"
-    else:
-        kpis["Con sponsor"] = "0"
-
-    # Ensayos clínicos
-    ctrial = _first_col(dff, CAND["clinical"])
-    if ctrial:
-        kpis["Ensayos clínicos"] = f"{int(dff[ctrial].sum()):,}"
-    else:
-        kpis["Ensayos clínicos"] = "0"
-
+    kpis["% con DOI"] = f"{(dff['DOI_norm'].notna().mean()*100):.1f}%" if "DOI_norm" in dff else "—"
+    kpis["% OA"] = f"{(dff['Open Access'].mean()*100):.1f}%" if "Open Access" in dff else "—"
+    kpis["Mediana citas"] = f"{pd.to_numeric(dff['Times Cited'], errors='coerce').median():.0f}" if "Times Cited" in dff else "—"
+    kpis["Con sponsor"] = f"{int(dff.get('Has_Sponsor', pd.Series([0]*len(dff))).sum()):,}"
+    kpis["Ensayos clínicos"] = f"{int(dff.get('ClinicalTrial_flag', pd.Series([0]*len(dff))).sum()):,}"
     return kpis
 
-def _fig_evolucion(dff):
-    ycol = _first_col(dff, CAND["year"])
-    if not ycol: return None
-    ev = dff[ycol].value_counts().sort_index()
-    return px.bar(x=ev.index, y=ev.values, labels={"x":"Año", "y":"Nº publicaciones"})
+# -----------------------------
+# Figuras
+# -----------------------------
+def _fig_year_counts(dff): 
+    g = dff["_Year"].dropna().astype(int).value_counts().sort_index()
+    return px.bar(x=g.index, y=g.values, labels={"x":"Año","y":"Nº publicaciones"}, title="Publicaciones por año")
 
-def _fig_oa(dff):
-    if "Open Access" not in dff.columns: return None
-    counts = dff["Open Access"].fillna("Desconocido").value_counts()
-    return px.pie(names=counts.index, values=counts.values, hole=0.4)
-
-def _fig_quartiles(dff):
-    qcol = _first_col(dff, CAND["quartile"])
-    if not qcol: return None
-    qcounts = dff[qcol].fillna("Sin cuartil").value_counts()
-    return px.pie(names=qcounts.index, values=qcounts.values, hole=0.4)
+def _fig_oa_pie(dff):
+    counts = dff["Open Access"].map({True:"OA",False:"No OA"}).value_counts()
+    return px.pie(names=counts.index, values=counts.values, hole=0.4, title="Proporción OA / No OA")
 
 def _fig_quartiles_year(dff):
-    qcol = _first_col(dff, CAND["quartile"])
-    ycol = _first_col(dff, CAND["year"])
-    if not qcol or not ycol: return None
-    df_qy = dff.copy()
-    df_qy[qcol] = df_qy[qcol].fillna("Sin cuartil")
-    grp = df_qy.groupby([ycol, qcol]).size().reset_index(name="count")
-    return px.bar(grp, x=ycol, y="count", color=qcol, barmode="stack", 
-                  labels={ycol:"Año", "count":"Nº publicaciones", qcol:"Cuartil"})
+    if "JCR_Quartile" not in dff: return None
+    tmp = dff.dropna(subset=["_Year","JCR_Quartile"])
+    g = tmp.groupby(["_Year","JCR_Quartile"]).size().reset_index(name="N")
+    return px.bar(g, x="_Year", y="N", color="JCR_Quartile", barmode="group", title="Publicaciones por año y cuartil")
 
-def _wordcloud(dff):
-    tcol = _first_col(dff, CAND["title"])
-    if not tcol: return None
-    text = " ".join(dff[tcol].dropna().astype(str))
-    wc = WordCloud(width=800, height=400, background_color="white").generate(text)
-    fig, ax = plt.subplots(figsize=(10,5))
-    ax.imshow(wc, interpolation="bilinear")
-    ax.axis("off")
+def _fig_wordcloud(dff):
+    txt = " ".join(dff["Title"].dropna().astype(str))
+    if not txt: return None
+    wc = WordCloud(width=800, height=400, background_color="white").generate(txt)
+    fig, ax = plt.subplots(figsize=(10,5)); ax.imshow(wc, interpolation="bilinear"); ax.axis("off")
     return fig
 
-# ======================================
-# Sidebar: carga de datos
-# ======================================
-st.sidebar.header("Datos base")
-base_file = st.sidebar.file_uploader("Sube el XLSX (usa la 1ª hoja)", type=["xlsx"])
-if base_file is not None:
-    df = pd.read_excel(base_file, sheet_name=0)
-else:
-    st.stop()
+# -----------------------------
+# Carga inicial
+# -----------------------------
+base_df = load_dataframe(None)
+df = normalize_dataset(base_df)
 
-# ======================================
-# Filtros
-# ======================================
+# -----------------------------
+# Sidebar filtros
+# -----------------------------
 mask = pd.Series(True, index=df.index)
+with st.sidebar:
+    st.subheader("Filtros")
+    if "_Year" in df: 
+        ys = df["_Year"].dropna().astype(int)
+        y1,y2 = st.slider("Años",int(ys.min()),int(ys.max()),(int(ys.min()),int(ys.max())))
+        mask &= df["_Year"].between(y1,y2)
+    if "Open Access" in df:
+        sel = st.multiselect("Open Access",["OA","No OA"],default=["OA","No OA"])
+        mask &= df["Open Access"].map({True:"OA",False:"No OA"}).isin(sel)
+    if "JCR_Quartile" in df:
+        opts = df["JCR_Quartile"].dropna().unique().tolist()
+        sel = st.multiselect("Cuartiles",opts,default=opts)
+        mask &= df["JCR_Quartile"].isin(sel)
 
-# Año
-ycol = _first_col(df, CAND["year"])
-if ycol:
-    ys = df[ycol].dropna().astype(int)
-    y_min, y_max = int(ys.min()), int(ys.max())
-    y1, y2 = st.sidebar.slider("Año", y_min, y_max, (y_min, y_max))
-    mask &= df[ycol].astype(float).between(y1, y2)
-
-# Fuente
-src_opts = [c for c in ["in_Scopus", "in_WoS", "in_PubMed"] if c in df.columns]
-sel_src = st.sidebar.multiselect("Fuente", options=src_opts, default=src_opts)
-if sel_src:
-    mask &= df[sel_src].fillna(False).any(axis=1)
-
-# Open Access
-if "Open Access" in df.columns:
-    oa_vals = ["OA", "No OA", "Desconocido"]
-    sel_oa = st.sidebar.multiselect("Open Access", oa_vals, default=oa_vals)
-    mask &= df["Open Access"].fillna("Desconocido").isin(sel_oa)
-
-# Departamento
-if "Departamento" in df.columns:
-    dep_pool = df["Departamento"].dropna().unique().tolist()
-    sel_dep = st.sidebar.multiselect("Departamento", sorted(dep_pool), default=[])
-    if sel_dep:
-        mask &= df["Departamento"].isin(sel_dep)
-
-# Cuartiles
-qcol = _first_col(df, CAND["quartile"])
-if qcol:
-    q_vals = ["Q1", "Q2", "Q3", "Q4", "Sin cuartil"]
-    sel_q = st.sidebar.multiselect("Cuartil JCR", q_vals, default=q_vals)
-    mask &= df[qcol].fillna("Sin cuartil").isin(sel_q)
-
-# Aplicar
 dff = df[mask].copy()
 
-# ======================================
-# Tabs principales
-# ======================================
-tabs = st.tabs(["📊 Resumen", "📈 Evolución", "📗 OA", "🏅 Cuartiles", "☁️ Wordcloud"])
+# -----------------------------
+# Tabs
+# -----------------------------
+tabs = st.tabs(["📌 Resumen","📊 Cuartiles","📄 Datos","🧑‍🔬 Autores","🟢 OA","☁️ Wordcloud"])
 
-# KPIs
+# RESUMEN
 with tabs[0]:
     KP = _kpis_summary(dff)
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Nº publicaciones", KP["Nº publicaciones"])
-    k2.metric("% OA", KP["% OA"])
-    k3.metric("Mediana citas", KP["Mediana citas"])
-    k4.metric("Con sponsor", KP["Con sponsor"])
-    k5.metric("Ensayos clínicos", KP["Ensayos clínicos"])
+    k1,k2,k3,k4,k5 = st.columns(5)
+    k1.metric("Nº publicaciones",KP["Nº publicaciones"])
+    k2.metric("% DOI",KP["% con DOI"])
+    k3.metric("% OA",KP["% OA"])
+    k4.metric("Sponsors",KP["Con sponsor"])
+    k5.metric("Ensayos clínicos",KP["Ensayos clínicos"])
+    st.plotly_chart(_fig_year_counts(dff), use_container_width=True)
 
-# Evolución
+# CUARTILES
 with tabs[1]:
-    fig_ev = _fig_evolucion(dff)
-    if fig_ev: st.plotly_chart(fig_ev, use_container_width=True, key="fig_ev")
+    st.subheader("Distribución por cuartiles")
+    if "JCR_Quartile" in dff:
+        counts = dff["JCR_Quartile"].fillna("Sin cuartil").value_counts()
+        fig_q = px.pie(names=counts.index, values=counts.values, hole=0.4,
+                       color=counts.index,
+                       color_discrete_map={"Q1":"green","Q2":"yellow","Q3":"orange","Q4":"darkred","Sin cuartil":"lightgrey"})
+        st.plotly_chart(fig_q, use_container_width=True, key="quartiles_pie")
+        fig_qy = _fig_quartiles_year(dff)
+        if fig_qy: st.plotly_chart(fig_qy, use_container_width=True, key="quartiles_year")
+
+# DATOS
+with tabs[2]:
+    st.dataframe(dff.head(500), use_container_width=True)
+
+# AUTORES
+with tabs[3]:
+    if "Author Full Names" in dff:
+        s = dff["Author Full Names"].dropna().astype(str).str.split(";")
+        authors = [a.strip() for sub in s for a in sub if a.strip()]
+        top = pd.Series(authors).value_counts().head(20).reset_index()
+        top.columns=["Autor","N"]
+        st.plotly_chart(px.bar(top,x="N",y="Autor",orientation="h"), use_container_width=True)
+        st.dataframe(top)
 
 # OA
-with tabs[2]:
-    fig_oa = _fig_oa(dff)
-    if fig_oa: st.plotly_chart(fig_oa, use_container_width=True, key="fig_oa")
-
-# Cuartiles
-with tabs[3]:
-    fig_q = _fig_quartiles(dff)
-    fig_qy = _fig_quartiles_year(dff)
-    if fig_q: st.plotly_chart(fig_q, use_container_width=True, key="fig_q")
-    if fig_qy: st.plotly_chart(fig_qy, use_container_width=True, key="fig_qy")
-
-# Wordcloud
 with tabs[4]:
-    fig_wc = _wordcloud(dff)
-    if fig_wc: st.pyplot(fig_wc)
+    st.plotly_chart(_fig_oa_pie(dff), use_container_width=True)
 
-    
+# WORDCLOUD
+with tabs[5]:
+    fig_wc = _fig_wordcloud(dff)
+    if fig_wc: st.pyplot(fig_wc)
