@@ -1,96 +1,147 @@
+
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 
+# =========================
+# ⚙️ Configuración de página
+# =========================
 st.set_page_config(
-    page_title="Dashboard Cienciométrico — Facultad de Medicina Clínica Alemana, Universidad del Desarrollo",
+    page_title="CAS-UDD Dashboard",
     layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-st.title("📊 Dashboard Cienciométrico — Facultad de Medicina Clínica Alemana, Universidad del Desarrollo")
+# =========================
+# 📥 Carga de datos
+# =========================
+@st.cache_data
+def load_data():
+    return pd.read_excel("dataset_unificado_enriquecido_jcr_PLUS.xlsx", sheet_name="Consolidado_enriq")
 
-# ==========================
-# 📂 Carga de datos
-# ==========================
-uploaded_file = st.sidebar.file_uploader("Sube el Excel enriquecido", type=["xlsx"])
+df = load_data()
 
-if uploaded_file:
-    df = pd.read_excel(uploaded_file)
-else:
-    st.warning("Sube un archivo Excel para comenzar")
-    st.stop()
-
-
-# ==========================
-# 🎛️ Filtros en sidebar
-# ==========================
+# =========================
+# 🎛️ Filtros globales
+# =========================
 st.sidebar.header("Filtros")
 
-# Año
-if "Year" in df.columns:
-    years = sorted(df["Year"].dropna().unique())
-    year_range = st.sidebar.slider("Año de publicación", int(min(years)), int(max(years)), (int(min(years)), int(max(years))))
-    df = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])]
+years = sorted(df["Year_clean"].dropna().unique().tolist())
+selected_years = st.sidebar.multiselect("Año", years, default=years)
 
-# Cuartiles
-if "JCR_Quartile" in df.columns:
-    quartiles = df["JCR_Quartile"].fillna("Sin cuartil").unique().tolist()
-    selected_quartiles = st.sidebar.multiselect("Cuartiles", quartiles, default=quartiles)
-    df = df[df["JCR_Quartile"].fillna("Sin cuartil").isin(selected_quartiles)]
+oa_options = ["Todos","Open Access","Closed Access"]
+selected_oa = st.sidebar.radio("Open Access", oa_options, index=0)
 
-# ==========================
-# 📈 Métricas principales
-# ==========================
-col1, col2, col3, col4 = st.columns(4)
+quartiles = sorted(df["JIF Quartile"].dropna().unique().tolist())
+selected_quartiles = st.sidebar.multiselect("Cuartil JCR", quartiles, default=quartiles)
 
-with col1:
-    st.metric("Total publicaciones", len(df))
-
-with col2:
-    q1pct = (df["JCR_Quartile"].eq("Q1").mean() * 100) if "JCR_Quartile" in df.columns else 0
-    st.metric("% en Q1", f"{q1pct:.1f}%")
-
-with col3:
-    if "Times Cited" in df.columns:
-        st.metric("Máx. citas", int(df["Times Cited"].max()))
+df_filtered = df.copy()
+if selected_years:
+    df_filtered = df_filtered[df_filtered["Year_clean"].isin(selected_years)]
+if selected_oa != "Todos":
+    if selected_oa == "Open Access":
+        df_filtered = df_filtered[df_filtered["OpenAccess_flag"] == True]
     else:
-        st.metric("Máx. citas", "—")
+        df_filtered = df_filtered[df_filtered["OpenAccess_flag"] == False]
+if selected_quartiles:
+    df_filtered = df_filtered[df_filtered["JIF Quartile"].isin(selected_quartiles)]
 
-with col4:
-    if "DOI" in df.columns:
-        st.metric("Con DOI", df["DOI"].notna().sum())
-    else:
-        st.metric("Con DOI", "—")
+# =========================
+# 🗂️ Pestañas principales
+# =========================
+tabs = st.tabs(["📊 Resumen general", "📚 Revistas", "👩‍⚕️ Autores/Departamentos", "🔓 Open Access", "📑 Dataset"])
 
-# ==========================
-# 🥧 Gráfico de cuartiles
-# ==========================
-if "JCR_Quartile" in df.columns:
-    quartile_counts = df["JCR_Quartile"].fillna("Sin cuartil").value_counts()
-    fig_q = px.pie(
-        names=quartile_counts.index,
-        values=quartile_counts.values,
-        hole=0.4,
-        color=quartile_counts.index,
-        color_discrete_map={
-            "Q1": "green",
-            "Q2": "yellow",
-            "Q3": "orange",
-            "Q4": "darkred",
-            "Sin cuartil": "lightgrey"
-        }
-    )
-    fig_q.update_traces(textinfo="percent+label", pull=[0.05]*len(quartile_counts))
-    st.plotly_chart(fig_q, use_container_width=True)
+# =========================
+# 📊 Resumen General
+# =========================
+with tabs[0]:
+    st.subheader("📊 Resumen General")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total publicaciones", len(df_filtered))
+    col2.metric("% Open Access", f"{100*df_filtered['OpenAccess_flag'].mean():.1f}%")
+    if "Journal Impact Factor" in df_filtered:
+        col3.metric("Promedio JIF", f"{df_filtered['Journal Impact Factor'].mean():.2f}")
 
-# ==========================
-# 📜 Tabla de resultados
-# ==========================
-st.subheader("📜 Registros filtrados")
-st.dataframe(df, use_container_width=True)
+    # Donut chart por cuartiles
+    if "JIF Quartile" in df_filtered:
+        quartile_counts = df_filtered["JIF Quartile"].fillna("Sin cuartil").value_counts()
+        fig_q = px.pie(
+            names=quartile_counts.index,
+            values=quartile_counts.values,
+            hole=0.4,
+            color=quartile_counts.index,
+            color_discrete_map={
+                "Q1":"green",
+                "Q2":"yellow",
+                "Q3":"orange",
+                "Q4":"darkred",
+                "Sin cuartil":"lightgrey"
+            }
+        )
+        fig_q.update_traces(textposition="inside", textinfo="label+percent")
+        st.plotly_chart(fig_q, use_container_width=True)
 
-# ==========================
-# 💾 Descargar resultados
-# ==========================
-st.download_button("⬇️ Descargar resultados (CSV)", df.to_csv(index=False).encode("utf-8"), "resultados.csv", "text/csv")
+    # Conteo de publicaciones por año
+    if "Year_clean" in df_filtered:
+        pubs_by_year = df_filtered.groupby("Year_clean").size()
+        fig_year = px.bar(
+            pubs_by_year,
+            x=pubs_by_year.index,
+            y=pubs_by_year.values,
+            title="Publicaciones por año",
+            labels={"x":"Año", "y":"N° Publicaciones"}
+        )
+        st.plotly_chart(fig_year, use_container_width=True)
+
+# =========================
+# 📚 Revistas
+# =========================
+with tabs[1]:
+    st.subheader("📚 Análisis por Revistas")
+    if "Journal Impact Factor" in df_filtered:
+        top_jif = (df_filtered[["Source title","Journal Impact Factor"]]
+                   .dropna()
+                   .drop_duplicates()
+                   .sort_values("Journal Impact Factor", ascending=False)
+                   .head(10))
+        st.write("### Top 10 revistas por JIF")
+        st.bar_chart(top_jif.set_index("Source title"))
+    if "SJR" in df_filtered:
+        top_sjr = (df_filtered[["Source title","SJR"]]
+                   .dropna()
+                   .drop_duplicates()
+                   .sort_values("SJR", ascending=False)
+                   .head(10))
+        st.write("### Top 10 revistas por SJR")
+        st.bar_chart(top_sjr.set_index("Source title"))
+
+# =========================
+# 👩‍⚕️ Autores / Departamentos
+# =========================
+with tabs[2]:
+    st.subheader("👩‍⚕️ Autores y Departamentos")
+    if "Authors" in df_filtered:
+        top_authors = df_filtered["Authors"].value_counts().head(10)
+        st.write("### Top 10 autores")
+        st.bar_chart(top_authors)
+    if "Affiliations" in df_filtered:
+        top_dept = df_filtered["Affiliations"].value_counts().head(10)
+        st.write("### Top 10 departamentos / afiliaciones")
+        st.bar_chart(top_dept)
+
+# =========================
+# 🔓 Open Access
+# =========================
+with tabs[3]:
+    st.subheader("🔓 Open Access")
+    oa_by_year = df_filtered.groupby("Year_clean")["OpenAccess_flag"].mean().mul(100)
+    st.write("### Evolución de % OA por año")
+    st.line_chart(oa_by_year)
+
+# =========================
+# 📑 Dataset
+# =========================
+with tabs[4]:
+    st.subheader("📑 Dataset filtrado")
+    st.dataframe(df_filtered)
+    st.download_button("⬇️ Descargar Excel", df_filtered.to_csv(index=False).encode("utf-8"), "dataset_filtrado.csv", "text/csv")
