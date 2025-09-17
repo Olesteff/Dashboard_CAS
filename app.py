@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pathlib import Path
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
 
 # =========================
 # CONFIG
@@ -16,7 +18,6 @@ DEFAULT_SHEET = 0
 # FUNCIONES AUXILIARES
 # =========================
 def detectar_departamento(row):
-    """Detecta el departamento en base a las afiliaciones."""
     text = str(row.get("Authors with affiliations", "")) + " " + str(row.get("Affiliations", ""))
     text = text.lower()
 
@@ -38,20 +39,15 @@ def detectar_departamento(row):
         return "Enfermería"
     if "imágenes" in text or "radiolog" in text:
         return "Imágenes"
-    # Agregar más reglas según se necesiten
     return "Sin asignar"
 
 def detectar_ensayo_clinico(row):
-    """Marca publicaciones que son ensayos clínicos."""
     text = str(row.get("Publication Type", "")) + " " + str(row.get("Article Title", ""))
     text = text.lower()
     if "clinical trial" in text or "ensayo clínico" in text:
         return True
     return False
 
-# =========================
-# CARGA DE DATOS
-# =========================
 @st.cache_data
 def load_data(uploaded=None):
     if uploaded is not None:
@@ -62,12 +58,27 @@ def load_data(uploaded=None):
 
     return pd.DataFrame()
 
-df = load_data()
+# =========================
+# CARGA DE DATOS
+# =========================
+uploaded = st.sidebar.file_uploader("📂 Subir archivo Excel", type=["xlsx"])
+df = load_data(uploaded)
 
-if not df.empty:
-    # Detectar departamentos y ensayos clínicos
-    df["Departamento_detectado"] = df.apply(detectar_departamento, axis=1)
-    df["Ensayo_clinico_flag"] = df.apply(detectar_ensayo_clinico, axis=1)
+if df.empty:
+    st.error("⚠️ No se encontró el archivo de datos")
+    st.stop()
+
+# Detectar departamentos y ensayos clínicos
+df["Departamento_detectado"] = df.apply(detectar_departamento, axis=1)
+df["Ensayo_clinico_flag"] = df.apply(detectar_ensayo_clinico, axis=1)
+
+# Normalizar cuartiles
+if "JCR Quartile" in df:
+    df["Quartile_std"] = df["JCR Quartile"].fillna("Sin cuartil")
+elif "JCR_Quartile" in df:
+    df["Quartile_std"] = df["JCR_Quartile"].fillna("Sin cuartil")
+else:
+    df["Quartile_std"] = "Sin cuartil"
 
 # =========================
 # SIDEBAR
@@ -89,7 +100,7 @@ quartile_filter = st.sidebar.multiselect(
 
 depart_filter = st.sidebar.multiselect(
     "Departamento",
-    options=df["Departamento_detectado"].unique() if "Departamento_detectado" in df else [],
+    options=df["Departamento_detectado"].unique(),
     default=[]
 )
 
@@ -108,9 +119,7 @@ if oa_filter == "Solo Open Access" and "OpenAccess_flag" in dff:
 elif oa_filter == "Solo Closed Access" and "OpenAccess_flag" in dff:
     dff = dff[dff["OpenAccess_flag"] == False]
 
-if "JCR_Quartile" in dff:
-    dff["Quartile_std"] = dff["JCR_Quartile"].fillna("Sin cuartil")
-    dff = dff[dff["Quartile_std"].isin(quartile_filter)]
+dff = dff[dff["Quartile_std"].isin(quartile_filter)]
 
 if depart_filter:
     dff = dff[dff["Departamento_detectado"].isin(depart_filter)]
@@ -135,10 +144,18 @@ col3.metric("Suma total JIF", round(suma_jif, 2))
 col4.metric("Ensayos clínicos detectados", ensayos)
 
 # =========================
-# GRAFICOS
+# PESTAÑAS
 # =========================
-st.subheader("📊 Distribución por cuartiles (JCR/SJR)")
-if "Quartile_std" in dff:
+tabs = st.tabs(["📈 Publicaciones", "📊 Cuartiles", "📖 Open Access", "🏥 Departamentos", "📚 Revistas", "👥 Autores", "☁️ Wordcloud"])
+
+# --- Publicaciones
+with tabs[0]:
+    if "Year" in dff:
+        pubs_year = dff.groupby("Year").size()
+        st.bar_chart(pubs_year)
+
+# --- Cuartiles
+with tabs[1]:
     quartile_counts = dff["Quartile_std"].value_counts()
     fig_q = px.pie(
         names=quartile_counts.index,
@@ -148,3 +165,61 @@ if "Quartile_std" in dff:
         color_discrete_map={"Q1": "green", "Q2": "yellow", "Q3": "orange", "Q4": "red", "Sin cuartil": "lightgrey"}
     )
     st.plotly_chart(fig_q, use_container_width=True)
+
+# --- Open Access
+with tabs[2]:
+    if "OpenAccess_flag" in dff:
+        oa_counts = dff["OpenAccess_flag"].value_counts()
+        fig_oa = px.pie(
+            names=["Closed Access", "Open Access"],
+            values=[oa_counts.get(False, 0), oa_counts.get(True, 0)],
+            hole=0.4,
+            color=["Closed Access", "Open Access"],
+            color_discrete_map={"Closed Access": "red", "Open Access": "green"}
+        )
+        st.plotly_chart(fig_oa, use_container_width=True)
+
+# --- Departamentos
+with tabs[3]:
+    dept_counts = dff["Departamento_detectado"].value_counts()
+    fig_dept = px.bar(dept_counts, x=dept_counts.index, y=dept_counts.values)
+    st.plotly_chart(fig_dept, use_container_width=True)
+
+# --- Revistas
+with tabs[4]:
+    if "Source title" in dff:
+        top_revistas = dff["Source title"].value_counts().head(15)
+        st.bar_chart(top_revistas)
+
+# --- Autores
+with tabs[5]:
+    if "Author Full Names" in dff:
+        autores = dff["Author Full Names"].str.split(";|,").explode().str.strip().value_counts().head(15)
+        st.bar_chart(autores)
+
+# --- Wordcloud
+with tabs[6]:
+    if "Article Title" in dff:
+        text = " ".join(dff["Article Title"].dropna().tolist())
+        wc = WordCloud(width=800, height=400, background_color="white").generate(text)
+        fig, ax = plt.subplots()
+        ax.imshow(wc, interpolation="bilinear")
+        ax.axis("off")
+        st.pyplot(fig)
+
+# =========================
+# DESCARGA
+# =========================
+st.sidebar.download_button(
+    "⬇️ Descargar CSV filtrado",
+    dff.to_csv(index=False).encode("utf-8"),
+    "publicaciones_filtradas.csv",
+    "text/csv"
+)
+
+st.sidebar.download_button(
+    "⬇️ Descargar Excel filtrado",
+    dff.to_excel(index=False, engine="openpyxl"),
+    "publicaciones_filtradas.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
