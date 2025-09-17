@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import unidecode
 
 # =========================
 # Config
@@ -150,40 +151,51 @@ def extract_authors_cas(affiliations: str) -> str:
     return "; ".join(cas_authors)
 
 
+
+
 def normalize_institution(name: str) -> str:
-    """Normaliza nombres de instituciones para evitar duplicados."""
     if not isinstance(name, str):
         return ""
 
-    key = unidecode.unidecode(name.lower().strip())
+    # Normalizar: minúsculas, quitar acentos, reemplazar guiones y múltiples espacios
+    key = unidecode.unidecode(name.lower())
+    key = re.sub(r"[-,_]", " ", key)
+    key = re.sub(r"\s+", " ", key).strip()
 
     normalization_map = {
         "universidad de chile": "Universidad de Chile",
         "university of chile": "Universidad de Chile",
         "pontificia universidad catolica de chile": "Pontificia Universidad Católica de Chile",
         "pontifical catholic university of chile": "Pontificia Universidad Católica de Chile",
-        "clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "Clínica Alemana - Universidad del Desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "facultad de medicina clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+
+        # Consolidamos TODO en una sola entrada
+        "clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad de desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad del desarrolo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad del desarollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad del des": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "facultad de medicina clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidadd del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "clinica alemana universidad": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "instituto de ciencias e innovacion en medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "university of development": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "icim": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "instituto de ciencias e innovacion en medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "centro de genetica y genomica": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "cegen": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+
         "hospital clinico universidad de chile": "Hospital Clínico Universidad de Chile",
-        "hospital clinico universidad catolica": "Hospital Clínico Universidad Católica",
-        "hospital clinico puc": "Hospital Clínico Universidad Católica",
-        "hospital clinico": "Hospital Clínico Universidad de Chile",
+        "hospital del salvador": "Hospital del Salvador",
         "clinica las condes": "Clínica Las Condes",
         "clc": "Clínica Las Condes",
-        "hospital militar": "Hospital Militar de Santiago",
-        "hospital militar de santiago": "Hospital Militar de Santiago",
-        "red de salud uc christus": "Red de Salud UC Christus",
-        "uc christus": "Red de Salud UC Christus",
-        "red de salud uc": "Red de Salud UC Christus",
-        "red de salud catolica": "Red de Salud UC Christus",
-        "red de salud católica": "Red de Salud UC Christus",
+        "harvard medical school": "Harvard University",
+        "university of california": "University of California",
+        "university of toronto": "University of Toronto",
+        "university of sydney": "University of Sydney",
     }
 
     return normalization_map.get(key, name.title())
