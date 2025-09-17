@@ -1,12 +1,14 @@
 # /app/app.py
-# Dashboard Cienciométrico con Tabs + Merge/Dedup + PDF (lee siempre la PRIMERA hoja del XLSX)
+# Dashboard Cienciométrico con Tabs + Merge/Dedup + PDF + WordCloud de títulos (lee 1ª hoja)
 
 from __future__ import annotations
 
+from collections import Counter
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import Dict, List, Optional
+import unicodedata
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -24,7 +26,7 @@ st.set_page_config(
 )
 
 DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
-DEFAULT_SHEET = 0  # por qué: 0 => SIEMPRE la primera hoja
+DEFAULT_SHEET = 0  # siempre la 1ª hoja
 
 DOI_REGEX = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.I)
 
@@ -44,7 +46,7 @@ CAND = {
 }
 
 # -----------------------------
-# Utilidades
+# Utilidades básicas
 # -----------------------------
 def _first_col(df: pd.DataFrame, names: List[str]) -> Optional[str]:
     for c in names:
@@ -142,11 +144,68 @@ def _make_pdf_report(imgs: Dict[str, bytes], kpis: Dict[str, str]) -> Optional[b
         return None
 
 # -----------------------------
+# Utilidades de texto / WordCloud
+# -----------------------------
+def _strip_accents(s: str) -> str:
+    return "".join(ch for ch in unicodedata.normalize("NFD", s) if unicodedata.category(ch) != "Mn")
+
+def build_stopwords(extra_csv: str = "") -> set:
+    # Por qué: cubrir artículos, conectores y muy comunes EN/ES (incluye 'are' como pidió)
+    en = {
+        "a","an","the","and","or","but","if","then","else","for","to","of","in","on","at","by","with","from","as",
+        "is","are","was","were","be","been","being","it","its","this","that","these","those","we","you","they","i",
+        "he","she","them","his","her","their","our","us","my","your","not","no","yes","do","does","did","done",
+        "can","could","may","might","must","should","would","will","there","here","than","also","et","al"
+    }
+    es = {
+        "el","la","los","las","un","una","unos","unas","y","o","u","pero","si","entonces","sino","como","de","del",
+        "en","con","por","para","a","al","que","se","su","sus","es","son","fue","fueron","ser","ha","han","hay",
+        "este","esta","estos","estas","eso","esa","esos","esas","lo"
+    }
+    extras = {w.strip().lower() for w in extra_csv.split(",") if w.strip()}
+    # palabras 1-2 letras casi siempre ruido
+    short = set([chr(c) for c in range(ord('a'), ord('z')+1)]) | set(list("de el la los las y o u en al si no".split()))
+    return en | es | extras | short
+
+def tokenize_titles(series: pd.Series, min_len: int, stop: set, bigrams: bool = False) -> Counter:
+    cnt: Counter = Counter()
+    for raw in series.dropna().astype(str):
+        t = _strip_accents(raw.lower())
+        t = re.sub(r"[^a-z0-9 ]+", " ", t)
+        words = [w for w in t.split() if len(w) >= min_len and w not in stop]
+        if not words:
+            continue
+        cnt.update(words)
+        if bigrams and len(words) >= 2:
+            # por qué: bigrams ayudan a captar temas compuestos
+            cnt.update([f"{words[i]} {words[i+1]}" for i in range(len(words)-1)])
+    return cnt
+
+def _wordcloud_png_from_freq(freq: Dict[str, int], width: int = 1600, height: int = 900) -> Optional[bytes]:
+    try:
+        from wordcloud import WordCloud  # type: ignore
+        wc = WordCloud(
+            width=width,
+            height=height,
+            background_color="white",
+            collocations=False,   # por qué: evitamos auto-bigrams que distorsionan
+            normalize_plurals=False,
+            prefer_horizontal=0.9,
+            random_state=42
+        ).generate_from_frequencies(freq)
+        img = wc.to_image()
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+# -----------------------------
 # Carga (cache) — primera hoja
 # -----------------------------
 @st.cache_data(show_spinner=False)
 def load_dataframe(uploaded, sheet_name=DEFAULT_SHEET) -> pd.DataFrame:
-    # por qué: sheet_name=0 asegura usar SIEMPRE la primera hoja del libro
     if uploaded is not None:
         return pd.read_excel(uploaded, sheet_name=sheet_name, dtype=str)
     if Path(DEFAULT_XLSX).exists():
@@ -177,7 +236,8 @@ def normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
 
     jcol = _first_col(df, CAND["journal"])
     if jcol:
-        df["Journal_norm"] = df[jcol].map(_norm_text)
+        df["Journal_norm"] = df[jr_col] if (jr_col := jcol) else df.get("Journal_norm")
+        df["Journal_norm"] = df["Journal_norm"].map(_norm_text)
 
     dpt = _first_col(df, CAND["dept"])
     if dpt:
@@ -390,9 +450,9 @@ def _fig_oa_pie(dff: pd.DataFrame):
     return fig
 
 # -----------------------------
-# Tabs
+# Tabs (añadimos 🔎 Títulos)
 # -----------------------------
-tabs = st.tabs(["📌 Resumen", "📄 Datos", "📚 Revistas", "🧑‍🔬 Autores", "🟢 OA", "⭐ Citas"])
+tabs = st.tabs(["📌 Resumen", "📄 Datos", "📚 Revistas", "🧑‍🔬 Autores", "🔎 Títulos", "🟢 OA", "⭐ Citas"])
 
 # RESUMEN
 with tabs[0]:
@@ -471,8 +531,44 @@ with tabs[3]:
     else:
         st.info("No hay columna de autores.")
 
-# OA
+# 🔎 TÍTULOS — WordCloud
 with tabs[4]:
+    st.subheader("🔎 Tendencias en títulos (WordCloud)")
+    if "Title" not in df.columns or df["Title"].dropna().empty:
+        st.info("No hay columna de títulos.")
+    else:
+        c1, c2, c3, c4 = st.columns([1.1,1,1.2,2])
+        with c1:
+            scope = st.radio("Alcance", ["Filtrado", "Todo"], horizontal=True)
+        with c2:
+            min_len = st.slider("Mín. letras", 2, 6, 3)
+        with c3:
+            use_bigrams = st.checkbox("Incluir bigrams", value=False)
+        with c4:
+            stop_extra = st.text_input("Stopwords extra (coma separadas)", "study,analysis,clinical,trial,case,report,review,role,effect")
+        ds = dff if scope == "Filtrado" else df
+
+        stop = build_stopwords(stop_extra)
+        freq = tokenize_titles(ds["Title"], min_len=min_len, stop=stop, bigrams=use_bigrams)
+
+        if not freq:
+            st.info("No hay términos después de filtrar stopwords.")
+        else:
+            # WordCloud (PNG)
+            png_wc = _wordcloud_png_from_freq(dict(freq.most_common(300)))
+            if png_wc:
+                st.image(png_wc, caption="WordCloud de términos en títulos", use_container_width=True)
+                st.download_button("⬇️ PNG — WordCloud", png_wc, "wordcloud_titulos.png", "image/png")
+            else:
+                st.warning("Instala el paquete `wordcloud` para renderizar la nube (pip install wordcloud).")
+
+            # Top términos (tabla)
+            top_n = st.slider("Top N términos", 10, 100, 30)
+            top_df = pd.DataFrame(freq.most_common(top_n), columns=["Término", "Frecuencia"])
+            st.dataframe(top_df, use_container_width=True, height=360)
+
+# OA
+with tabs[5]:
     st.subheader("Open Access")
     if "Open Access" in dff.columns and len(dff):
         fig_oa = _fig_oa_pie(dff)
@@ -486,7 +582,7 @@ with tabs[4]:
         st.info("No hay columna de OA.")
 
 # CITAS
-with tabs[5]:
+with tabs[6]:
     st.subheader("Más citadas")
     if "Times Cited" in dff.columns:
         tmp = dff.copy()
