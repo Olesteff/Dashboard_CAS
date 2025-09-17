@@ -380,4 +380,4 @@ if not new_df.empty and btn_prev:
 
 if not new_df.empty and btn_apply:
     df = merge_apply(df, new_df)
-    st.sidebar.success(f"Unión aplicada. Registros ahora: {}
+    st.sidebar.success(f"Unión aplicada. Registros ahora: {len(df)}.")
