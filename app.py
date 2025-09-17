@@ -72,6 +72,9 @@ def detect_clinical_trial(row) -> bool:
     ct_regex = r"(ensayo\s*cl[ií]nico|clinical\s*trial|randomi[sz]ed|phase\s*[i1v]+|double\s*blind|placebo\-controlled)"
     return bool(re.search(ct_regex, text))
 
+# =========================
+# Normalización de columnas
+# =========================
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -101,15 +104,28 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         df["Journal Impact Factor"] = 0
 
     # Cuartiles
-    q_col = _first_col(df, [
-        "JCR Quartile", "JCR_Quartile", "Quartile", "quartile_std",
-        "SJR Quartile", "SJR_Quartile","Quartile_JCR","JIF Quartile"
-    ])
-    if q_col:
-        q = df[q_col].astype(str).str.upper().str.extract(r"(Q[1-4])", expand=False)
-        df["Quartile"] = q.fillna("Sin cuartil")
-    else:
-        df["Quartile"] = "Sin cuartil"
+    def normalize_quartile(df: pd.DataFrame) -> pd.Series:
+        q_col = _first_col(df, [
+            "JCR Quartile", "JCR_Quartile", "Quartile", "quartile_std",
+            "SJR Quartile", "SJR_Quartile","Quartile_JCR","JIF Quartile"
+        ])
+        if not q_col:
+            return pd.Series("Sin cuartil", index=df.index)
+
+        raw = df[q_col].astype(str).str.upper().str.strip()
+
+        mapping = {
+            "1": "Q1", "Q-1": "Q1", "QUARTIL 1": "Q1",
+            "2": "Q2", "Q-2": "Q2", "QUARTIL 2": "Q2",
+            "3": "Q3", "Q-3": "Q3", "QUARTIL 3": "Q3",
+            "4": "Q4", "Q-4": "Q4", "QUARTIL 4": "Q4",
+        }
+        norm = raw.replace(mapping)
+        norm = norm.str.extract(r"(Q[1-4])", expand=False).fillna(norm)
+        norm = norm.where(norm.isin(["Q1","Q2","Q3","Q4"]), "Sin cuartil")
+        return norm
+
+    df["Quartile"] = normalize_quartile(df)
 
     # Departamentos
     aff_col = _first_col(df, ["Authors with affiliations", "Affiliations", "Author Affiliations"])
@@ -120,6 +136,20 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     # Ensayos clínicos
     df["ClinicalTrial_flag"] = df.apply(detect_clinical_trial, axis=1)
+
+    # Revistas
+    jr_col = _first_col(df, ["Journal_norm", "Journal", "Source Title", "Publication Name", "Source title"])
+    if jr_col:
+        df["Journal_norm"] = df[jr_col].astype(str).fillna("—")
+    else:
+        df["Journal_norm"] = "—"
+
+    # Autores
+    a_col = _first_col(df, ["Author Full Names", "Author full names", "Authors"])
+    if a_col:
+        df["Authors_norm"] = df[a_col].astype(str).fillna("")
+    else:
+        df["Authors_norm"] = ""
 
     return df
 
@@ -207,20 +237,16 @@ with tabs[3]:
 
 with tabs[4]:
     st.subheader("📑 Revistas más frecuentes")
-    jr_col = _first_col(dff, ["Journal_norm", "Journal", "Source Title", "Publication Name", "Source title"])
-    if jr_col:
-        journal_count = dff[jr_col].fillna("—").value_counts().head(20).reset_index()
-        journal_count.columns = ["Revista", "Publicaciones"]
-        st.dataframe(journal_count)
+    journal_count = dff["Journal_norm"].value_counts().head(20).reset_index()
+    journal_count.columns = ["Revista", "Publicaciones"]
+    st.dataframe(journal_count)
 
 with tabs[5]:
     st.subheader("👥 Autores más frecuentes")
-    a_col = _first_col(dff, ["Author Full Names", "Author full names", "Authors"])
-    if a_col:
-        authors = dff[a_col].dropna().str.split(";|,|\\|").explode().str.strip()
-        top_authors = authors.value_counts().head(20).reset_index()
-        top_authors.columns = ["Autor", "Publicaciones"]
-        st.dataframe(top_authors)
+    authors = dff["Authors_norm"].dropna().str.split(";|,|\\|").explode().str.strip()
+    top_authors = authors.value_counts().head(20).reset_index()
+    top_authors.columns = ["Autor", "Publicaciones"]
+    st.dataframe(top_authors)
 
 with tabs[6]:
     st.subheader("☁️ Wordcloud de títulos")
