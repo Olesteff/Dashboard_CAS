@@ -12,7 +12,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Archivo por defecto
 DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
 DEFAULT_SHEET = "Consolidado_enriq"
 
@@ -23,26 +22,31 @@ DEFAULT_SHEET = "Consolidado_enriq"
 def load_data(path=DEFAULT_XLSX, sheet_name=DEFAULT_SHEET):
     df = pd.read_excel(path, sheet_name=sheet_name)
 
-    # Normalización básica
-   if "Year" in df.columns:
-    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
-    df = df[df["Year"].between(1900, 2100)]  # 🔥 filtra años válidos
-    df["Year"] = df["Year"].astype(int)
-else:
-    df["Year"] = 0
+    # Normalizar año
+    if "Year" in df.columns:
+        df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+        df = df[df["Year"].between(1900, 2100)]   # 🔥 solo años válidos
+        df["Year"] = df["Year"].astype(int)
+    else:
+        df["Year"] = 0
 
+    # Normalizar cuartiles
     if "Quartile_std" not in df.columns:
         df["Quartile_std"] = "Sin cuartil"
 
+    # Normalizar departamento
     if "Departamento" not in df.columns:
         df["Departamento"] = "Sin asignar"
 
+    # Normalizar Open Access
     if "Open Access" not in df.columns:
         df["Open Access"] = "Desconocido"
 
     return df
 
-# Subida manual
+# =============================
+# CARGA ARCHIVO
+# =============================
 st.sidebar.header("📂 Datos base")
 uploaded_file = st.sidebar.file_uploader("Sube un XLSX", type=["xlsx"])
 if uploaded_file:
@@ -107,11 +111,17 @@ with col2:
     pct_oa = (dff["Open Access"].str.contains("Open", case=False, na=False).mean() * 100) if len(dff) > 0 else 0
     st.metric("% Open Access", f"{pct_oa:.1f}%")
 with col3:
-    ensayos = dff[dff["Tipo"].str.contains("clinical trial", case=False, na=False)] if "Tipo" in dff.columns else []
-    st.metric("Ensayos clínicos detectados", len(ensayos))
+    if "Tipo" in dff.columns:
+        ensayos = dff[dff["Tipo"].str.contains("clinical trial", case=False, na=False)]
+        st.metric("Ensayos clínicos detectados", len(ensayos))
+    else:
+        st.metric("Ensayos clínicos detectados", 0)
 with col4:
-    sponsors = dff[dff["Funding sponsor"].notna()] if "Funding sponsor" in dff.columns else []
-    st.metric("Publicaciones con sponsor detectado", len(sponsors))
+    if "Funding sponsor" in dff.columns:
+        sponsors = dff[dff["Funding sponsor"].notna()]
+        st.metric("Publicaciones con sponsor detectado", len(sponsors))
+    else:
+        st.metric("Publicaciones con sponsor detectado", 0)
 
 # =============================
 # GRÁFICOS
