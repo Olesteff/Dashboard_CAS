@@ -452,42 +452,32 @@ with tabs[4]:
         # Eliminar espacios extras
         formatted = re.sub(r"\s+", " ", name.strip())
 
-        # Pasar todo a minúsculas primero para unificar
-        formatted = formatted.lower()
-
-        # Correcciones básicas de términos clave
-        replacements = {
-            "journal": "Journal",
-            "revista": "Revista",
-            "medica": "Médica",
-            "medico": "Médico",
-            "chilena": "Chilena",
-            "chileno": "Chileno",
-            "pediatria": "Pediatría",
-            "radiologia": "Radiología",
-            "infectologia": "Infectología",
-            "obstetricia": "Obstetricia",
-            "ginecologia": "Ginecología",
-            "anestesia": "Anestesia",
-            "cirugia": "Cirugía",
-            "enfermedades respiratorias": "Enfermedades Respiratorias",
-        }
-
-        # Reemplazar términos clave respetando acentos
-        for k, v in replacements.items():
-            formatted = re.sub(rf"\b{k}\b", v, formatted, flags=re.IGNORECASE)
-
-        # Capitalizar primera letra de cada palabra, excepto conectores
+        # Normalizar mayúsculas: capitalizar cada palabra
         words = formatted.split()
-        formatted = " ".join(
-            [w.capitalize() if w.lower() not in ["de", "del", "la", "el", "y", "en", "los", "las"] else w.lower()
-             for w in words]
-        )
+        formatted = " ".join([w.capitalize() if len(w) > 2 else w.lower() for w in words])
 
-        # Correcciones manuales de revistas específicas
+        # Correcciones para mantener palabras clave intactas
+        corrections = {
+            "De": "de",
+            "La": "la",
+            "El": "el",
+            "Y": "y",
+            "En": "en",
+            "Del": "del",
+            "Los": "los",
+            "Las": "las",
+            "Journal": "Journal",   # Mantener Journal
+            "Revista": "Revista",   # Mantener Revista
+            "Bmj": "BMJ",           # Corrección siglas
+            "Nejm": "NEJM",
+            "Lancet": "The Lancet"
+        }
+        for wrong, right in corrections.items():
+            formatted = formatted.replace(f" {wrong} ", f" {right} ")
+
+        # Diccionario de normalización manual (revistas chilenas)
         normalization_map = {
             "Medica Chile": "Revista Médica de Chile",
-            "Revista Medica Chile": "Revista Médica de Chile",
             "Chilena Pediatria": "Revista Chilena de Pediatría",
             "Chilena Radiologia": "Revista Chilena de Radiología",
             "Chilena Infectologia": "Revista Chilena de Infectología",
@@ -500,7 +490,7 @@ with tabs[4]:
         }
 
         return normalization_map.get(formatted, formatted)
-
+    
     # Aplicar formato a los nombres de revistas
     dff["Journal_formatted"] = dff["Journal_norm"].apply(format_journal_name)
     
@@ -516,6 +506,7 @@ with tabs[4]:
         title="Top 20 Revistas"
     )
     
+    # Ajustar layout
     fig.update_layout(
         yaxis=dict(categoryorder='total ascending'),
         margin=dict(l=300),
@@ -523,6 +514,7 @@ with tabs[4]:
         yaxis_tickfont=dict(size=12)
     )
     
+    # Mostrar valores dentro de las barras
     fig.update_traces(
         text=journals.sort_values("Publicaciones")["Publicaciones"],
         textposition='inside',
