@@ -331,6 +331,12 @@ if sel_dep:
     patt = "|".join(re.escape(x) for x in sel_dep)
     mask &= df["Departamento"].fillna("").str.contains(patt)
 
+depart_filter = st.sidebar.multiselect(
+    "Departamento",
+    options=df["Departamento_detectado"].unique(),
+    default=[]
+)
+
 if qtxt and "Title" in df.columns:
     mask &= df["Title"].fillna("").str.contains(qtxt, case=False, na=False)
 
@@ -429,20 +435,13 @@ with tabs[4]:
 
 # 6) Autores
 with tabs[5]:
-    st.subheader("Top autores")
-    a_col = _first_col(dff, ["Author Full Names","Author full names","Authors"])
-    if a_col:
-        s = dff[a_col].dropna().astype(str).str.split(";")
-        authors = [a.strip() for sub in s for a in sub if a.strip()]
-        if authors:
-            vc = pd.Series(authors).value_counts().head(30)
-            fig = px.bar(vc.sort_values(), orientation="h", title="Top autores (30)")
-            st.plotly_chart(fig, use_container_width=True, key="auth_bar")
-            st.dataframe(vc.rename_axis("Autor").reset_index(name="Publicaciones"), use_container_width=True, height=420)
-        else:
-            st.info("No hay autores parseables.")
+    if "Authors" in dff:
+        top_aut = dff["Authors"].dropna().str.split(",").explode().str.strip().value_counts().head(10).reset_index()
+        top_aut.columns = ["Autor", "Publicaciones"]
+        st.table(top_aut)
     else:
-        st.info("No hay columna de autores.")
+        st.info("⚠️ No hay autores parseables.")
+
 
 # 7) Wordcloud (opcional)
 with tabs[6]:
