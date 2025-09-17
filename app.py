@@ -453,17 +453,33 @@ with tabs[7]:
         st.info("No hay datos de citas en este dataset.")
 
 with tabs[8]:
-    st.subheader("🌍 Colaboración internacional (países en afiliaciones)")
+    st.subheader("🌍 Colaboración internacional (instituciones en afiliaciones)")
     if "Affiliations" in dff.columns:
-        countries = dff["Affiliations"].dropna().astype(str).str.extractall(r"\b([A-Z][a-z]+)\b")[0]
-        top_countries = countries.value_counts().head(15).reset_index()
-        top_countries.columns = ["País", "Publicaciones"]
-        st.plotly_chart(px.bar(top_countries.sort_values("Publicaciones"),
-                               x="Publicaciones", y="País", orientation="h",
-                               title="Top Países en Afiliaciones"), use_container_width=True)
-        st.dataframe(top_countries)
+        # Normalizamos afiliaciones en minúsculas y quitamos ruido
+        affils = dff["Affiliations"].dropna().astype(str)
+        
+        # Dividir por ; o , para separar instituciones
+        institutions = affils.str.split(r";|,").explode().str.strip()
+        
+        # Filtrar instituciones relevantes (ej: contienen 'univ', 'hospital', 'institute', etc.)
+        institutions = institutions[institutions.str.contains(
+            r"(univ|universidad|hospital|clinic|institute|school|center|centre)", 
+            case=False, na=False
+        )]
+        
+        # Contar las top instituciones
+        top_institutions = institutions.value_counts().head(15).reset_index()
+        top_institutions.columns = ["Institución", "Publicaciones"]
+
+        st.plotly_chart(
+            px.bar(top_institutions.sort_values("Publicaciones"),
+                   x="Publicaciones", y="Institución", orientation="h",
+                   title="Top Instituciones en Afiliaciones"),
+            use_container_width=True
+        )
+        st.dataframe(top_institutions)
     else:
-        st.info("No se encontraron países en las afiliaciones.")
+        st.info("No se encontraron instituciones en las afiliaciones.")
 
 with tabs[9]:
     st.subheader("💰 Financiamiento")
