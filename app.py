@@ -140,6 +140,17 @@ def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
 
     return kpis
 
+
+# Mostrar métricas
+k1, k2, k3, k4, k5 = st.columns(5)
+KP = _kpis_summary(dff)
+k1.metric("Nº publicaciones", KP["Nº publicaciones"])
+k2.metric("% OA", KP["% OA"])
+k3.metric("Mediana citas", KP["Mediana citas"])
+k4.metric("Con sponsor", KP["Con sponsor"])
+k5.metric("Ensayos clínicos", KP["Ensayos clínicos"])
+
+
 # -----------------------------
 # Figuras
 # -----------------------------
