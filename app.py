@@ -381,11 +381,12 @@ elif oa_choice == "Solo Closed Access":
 if sel_q:
     mask &= df["quartile_std"].isin(sel_q)
 
-if sel_dep:
-    patt = "|".join(re.escape(x) for x in sel_dep)
-    mask &= df["Departamento"].fillna("").str.contains(patt)
+if depart_filter:
+    dff = dff[dff["Departamento_detectado"].isin(depart_filter)]
 
-if qtxt and "Title" in df.columns:
+if title_filter:
+    dff = dff[dff["Article Title"].str.contains(title_filter, case=False, na=False)]
+
     mask &= df["Title"].fillna("").str.contains(qtxt, case=False, na=False)
 
 dff = df.loc[mask].copy()
@@ -393,6 +394,8 @@ dff = dff.loc[:, ~pd.Index(dff.columns).duplicated(keep="last")]
 
 st.title("Dashboard de Producción Científica Clínica Alemana- Universidad del Desarrollo")
 st.caption("Dataset activo: " + (up.name if up is not None else DEFAULT_XLSX))
+
+
 
 # =========================
 # KPIs
