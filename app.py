@@ -232,11 +232,20 @@ c7.metric("🏆 % en Q1", f"{100 * (dff['Quartile']=='Q1').mean():.1f}%")
 c8.metric("📊 h-index", h_index)
 
 # =========================
-# Tabs
+# Pestañas
 # =========================
 tabs = st.tabs([
-    "📅 Publicaciones", "📊 Cuartiles", "🔓 Open Access",
-    "🏥 Departamentos", "📑 Revistas", "👥 Autores", "☁️ Wordcloud"
+    "📅 Publicaciones", 
+    "📊 Cuartiles", 
+    "🔓 Open Access",
+    "🏥 Departamentos", 
+    "📑 Revistas", 
+    "👥 Autores", 
+    "☁️ Wordcloud",
+    "📖 Citas",            # 👈 NUEVA
+    "🌍 Colaboración",     # 👈 NUEVA
+    "💰 Financiamiento",   # 👈 NUEVA
+    "🌱 ODS"               # 👈 NUEVA
 ])
 
 with tabs[0]:
