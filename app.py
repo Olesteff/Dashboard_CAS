@@ -4,7 +4,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Optional, List
-
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -454,8 +453,8 @@ with tabs[4]:
     # Eliminar espacios extras
     formatted = re.sub(r"\s+", " ", name.strip())
 
-    # Normalizar mayúsculas: primera letra en mayúscula, resto igual
-    # (esto conserva "Revista", "Journal", "Medica", etc.)
+    # Normalizar mayúsculas: primera letra de cada palabra en mayúscula
+    # (sin eliminar "Revista", "Journal", "Medica", etc.)
     words = formatted.split()
     formatted = " ".join([w.capitalize() if len(w) > 2 else w.lower() for w in words])
 
