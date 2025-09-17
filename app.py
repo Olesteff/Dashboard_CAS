@@ -531,17 +531,38 @@ with tabs[8]:
         # Dividir por ; o , para separar instituciones
         institutions = affils.str.split(r";|,").explode().str.strip()
 
-        # Filtrar instituciones relevantes
+        # Filtrar instituciones relevantes (evitamos ruido)
         institutions = institutions[institutions.str.contains(
             r"(univ|universidad|hospital|clinic|institut|centre|centro)", 
             case=False, na=False
         )]
 
-        # Excluir ruidos comunes (School, Department, Faculty...)
         institutions = institutions[~institutions.str.contains(
-            r"(school|department|facultad|division|unidad)", 
+            r"(school|department|faculty|facultad|division|unidad)", 
             case=False, na=False
         )]
+
+        # Diccionario de normalización
+        normalization_map = {
+            "university of chile": "Universidad de Chile",
+            "universidad de chile": "Universidad de Chile",
+            "pontificia universidad catolica de chile": "Pontificia Universidad Católica de Chile",
+            "pontifical catholic university of chile": "Pontificia Universidad Católica de Chile",
+            "clinica alemana - universidad del desarrollo": "Clínica Alemana",
+            "facultad de medicina clínica alemana - universidad del desarrollo": "Clínica Alemana",
+            "hospital clinico universidad de chile": "Hospital Clínico Universidad de Chile",
+            "hospital del salvador": "Hospital del Salvador",
+            "harvard medical school": "Harvard University",
+            "university of california": "University of California",
+            "university of toronto": "University of Toronto"
+        }
+
+        # Normalizar nombres
+        def normalize_institution(name: str) -> str:
+            key = re.sub(r"[^a-z ]", "", name.lower())  # quitar tildes y símbolos
+            return normalization_map.get(key, name.strip())
+
+        institutions = institutions.apply(normalize_institution)
 
         # Contar las top instituciones
         top_institutions = institutions.value_counts().head(15).reset_index()
