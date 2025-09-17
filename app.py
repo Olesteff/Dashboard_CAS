@@ -446,20 +446,23 @@ with tabs[7]:
     st.subheader("📖 Citas por año")
     if not total_citas.empty:
         citas_year = dff.groupby("Year")[total_citas.name].sum().reset_index()
-        st.plotly_chart(px.bar(citas_year, x="Year", y=total_citas.name, title="Citas por Año"), use_container_width=True)
+        st.plotly_chart(
+            px.bar(citas_year, x="Year", y=total_citas.name, title="Citas por Año"),
+            use_container_width=True
+        )
     else:
         st.info("No hay datos de citas en este dataset.")
 
 with tabs[8]:
     st.subheader("🌍 Colaboración internacional (instituciones en afiliaciones)")
     if "Affiliations" in dff.columns:
-        # Normalizamos afiliaciones en minúsculas y quitamos ruido
+        # Normalizamos afiliaciones
         affils = dff["Affiliations"].dropna().astype(str)
         
         # Dividir por ; o , para separar instituciones
         institutions = affils.str.split(r";|,").explode().str.strip()
         
-        # Filtrar instituciones relevantes (ej: contienen 'univ', 'hospital', 'institute', etc.)
+        # Filtrar instituciones relevantes
         institutions = institutions[institutions.str.contains(
             r"(univ|universidad|hospital|clinic|institute|school|center|centre)", 
             case=False, na=False
@@ -470,24 +473,31 @@ with tabs[8]:
         top_institutions.columns = ["Institución", "Publicaciones"]
 
         st.plotly_chart(
-            px.bar(top_institutions.sort_values("Publicaciones"),
-                   x="Publicaciones", y="Institución", orientation="h",
-                   title="Top Instituciones en Afiliaciones"),
+            px.bar(
+                top_institutions.sort_values("Publicaciones"),
+                x="Publicaciones", y="Institución", orientation="h",
+                title="Top Instituciones en Afiliaciones"
+            ),
             use_container_width=True
         )
         st.dataframe(top_institutions)
     else:
         st.info("No se encontraron instituciones en las afiliaciones.")
 
-    with tabs[9]:
+with tabs[9]:
     st.subheader("🌱 Publicaciones por ODS")
     if "SDG" in dff.columns:
         sdg = dff["SDG"].dropna().astype(str).str.split(";").explode().str.strip()
         sdg_counts = sdg.value_counts().reset_index()
         sdg_counts.columns = ["ODS", "Publicaciones"]
-        st.plotly_chart(px.bar(sdg_counts.sort_values("Publicaciones"),
-                               x="Publicaciones", y="ODS", orientation="h",
-                               title="Distribución por ODS"), use_container_width=True)
+        st.plotly_chart(
+            px.bar(
+                sdg_counts.sort_values("Publicaciones"),
+                x="Publicaciones", y="ODS", orientation="h",
+                title="Distribución por ODS"
+            ),
+            use_container_width=True
+        )
         st.dataframe(sdg_counts)
     else:
         st.info("No hay información de ODS en este dataset.")
