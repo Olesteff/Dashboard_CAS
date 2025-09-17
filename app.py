@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 import numpy as np
 import pandas as pd
@@ -28,6 +28,13 @@ DEFAULT_SHEET_INDEX = 0
 # =========================
 # Funciones de apoyo
 # =========================
+def _first_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    """Devuelve la primera columna existente en el DF de una lista de candidatos."""
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
 def detect_department(affiliation: str) -> str:
     if not isinstance(affiliation, str):
         return "Sin asignar"
@@ -69,43 +76,43 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Año
-    year_cols = ["_Year", "Year", "Publication Year", "PY"]
-    for col in year_cols:
-        if col in df.columns:
-            df["Year"] = pd.to_numeric(df[col], errors="coerce")
-            break
-    if "Year" not in df.columns:
+    year_col = _first_col(df, ["_Year", "Year", "Publication Year", "PY"])
+    if year_col:
+        df["Year"] = pd.to_numeric(df[year_col], errors="coerce")
+    else:
         df["Year"] = pd.NA
 
     # Open Access
-    if "OpenAccess_flag" in df.columns:
-        df["OpenAccess_flag"] = (
-            df["OpenAccess_flag"].astype(str).str.lower().map({"true": True, "false": False})
+    oa_col = _first_col(df, ["OpenAccess_flag", "Open Access", "OA"])
+    if oa_col:
+        df["OpenAccess_flag"] = df[oa_col].astype(str).str.lower().isin(
+            {"1","true","t","yes","y","si","sí"}
         )
     else:
         df["OpenAccess_flag"] = False
 
     # JIF
-    jif_cols = ["Journal Impact Factor", "Impact Factor", "JIF"]
-    for col in jif_cols:
-        if col in df.columns:
-            df["Journal Impact Factor"] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-            break
-    if "Journal Impact Factor" not in df.columns:
+    jif_col = _first_col(df, [
+        "Journal Impact Factor", "Impact Factor", "JIF", "JIF_2023", "JCR_IF"
+    ])
+    if jif_col:
+        df["Journal Impact Factor"] = pd.to_numeric(df[jif_col], errors="coerce").fillna(0)
+    else:
         df["Journal Impact Factor"] = 0
 
     # Cuartiles
-    quart_cols = ["JCR Quartile", "Quartile", "quartile_std"]
-    for col in quart_cols:
-        if col in df.columns:
-            q = df[col].astype(str).str.upper().str.extract(r"(Q[1-4])", expand=False)
-            df["Quartile"] = q.fillna("Sin cuartil")
-            break
-    if "Quartile" not in df.columns:
+    q_col = _first_col(df, [
+        "JCR Quartile", "JCR_Quartile", "Quartile", "quartile_std",
+        "SJR Quartile", "SJR_Quartile","Quartile_JCR","JIF Quartile"
+    ])
+    if q_col:
+        q = df[q_col].astype(str).str.upper().str.extract(r"(Q[1-4])", expand=False)
+        df["Quartile"] = q.fillna("Sin cuartil")
+    else:
         df["Quartile"] = "Sin cuartil"
 
     # Departamentos
-    aff_col = next((c for c in ["Authors with affiliations", "Affiliations", "Author Affiliations"] if c in df.columns), None)
+    aff_col = _first_col(df, ["Authors with affiliations", "Affiliations", "Author Affiliations"])
     if aff_col:
         df["Departamento"] = df[aff_col].apply(detect_department)
     else:
@@ -200,17 +207,17 @@ with tabs[3]:
 
 with tabs[4]:
     st.subheader("📑 Revistas más frecuentes")
-    jr_col = next((c for c in ["Journal", "Source Title", "Publication Name"] if c in dff.columns), None)
+    jr_col = _first_col(dff, ["Journal_norm", "Journal", "Source Title", "Publication Name", "Source title"])
     if jr_col:
-        journal_count = dff[jr_col].value_counts().head(20).reset_index()
+        journal_count = dff[jr_col].fillna("—").value_counts().head(20).reset_index()
         journal_count.columns = ["Revista", "Publicaciones"]
         st.dataframe(journal_count)
 
 with tabs[5]:
     st.subheader("👥 Autores más frecuentes")
-    authors_col = next((c for c in ["Author Full Names", "Authors", "Authors with affiliations"] if c in dff.columns), None)
-    if authors_col:
-        authors = dff[authors_col].dropna().str.split(";|,|\\|").explode().str.strip()
+    a_col = _first_col(dff, ["Author Full Names", "Author full names", "Authors"])
+    if a_col:
+        authors = dff[a_col].dropna().str.split(";|,|\\|").explode().str.strip()
         top_authors = authors.value_counts().head(20).reset_index()
         top_authors.columns = ["Autor", "Publicaciones"]
         st.dataframe(top_authors)
