@@ -121,6 +121,7 @@ def normalize_institution(name: str) -> str:
         "universidad catolica de chile": "Pontificia Universidad Católica de Chile",
         "clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "Instituto de Ciencias e Innovación en Medicina (ICIM)": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "Instituto De Ciencias E Innovación en Medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "icim": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "Centro De Genetica Y Genomica": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "cegen": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
