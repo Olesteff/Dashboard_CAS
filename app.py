@@ -9,8 +9,6 @@ import plotly.express as px
 from wordcloud import WordCloud
 from pathlib import Path
 from io import BytesIO
-from collections import Counter
-import unicodedata as ud
 
 # ============================================
 # CONFIGURACIÓN GENERAL
@@ -25,28 +23,23 @@ st.set_page_config(
 # VARIABLES Y ARCHIVOS
 # ============================================
 DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
-DEFAULT_SHEET = 0  # primera hoja
 
 # ============================================
 # FUNCIONES AUXILIARES
 # ============================================
 
-def normalize_text(s: str) -> str:
-    if pd.isna(s): return ""
-    t = ud.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
-    return t.strip().lower()
-
-def load_dataframe(path: str, sheet=0) -> pd.DataFrame:
+def load_dataframe(path: str) -> pd.DataFrame:
     if not Path(path).exists():
         st.error(f"❌ No se encontró el archivo {path}")
         return pd.DataFrame()
-    return pd.read_excel(path, sheet_name=sheet)
+    return pd.read_excel(path, sheet_name=0)
 
 def kpis_summary(df: pd.DataFrame) -> dict:
     kpis = {}
     if df.empty: return kpis
     kpis["Total publicaciones"] = len(df)
-    kpis["% Open Access"] = f"{100 * df['OpenAccess_flag'].mean():.1f}%"
+    if "OpenAccess_flag" in df:
+        kpis["% Open Access"] = f"{100 * df['OpenAccess_flag'].mean():.1f}%"
     if "Journal Impact Factor" in df:
         kpis["Promedio JIF"] = round(df["Journal Impact Factor"].dropna().mean(), 2)
     return kpis
@@ -66,20 +59,22 @@ def quartile_distribution(df: pd.DataFrame):
         }
     )
     fig.update_traces(textinfo="label+percent")
-    fig.update_layout(showlegend=True)
+    fig.update_layout(title="📊 Distribución por cuartiles JCR", showlegend=True)
     return fig
 
 def publications_per_year(df: pd.DataFrame):
     if "Year_clean" not in df: return None
     counts = df["Year_clean"].value_counts().sort_index()
-    fig = px.bar(x=counts.index, y=counts.values, labels={"x": "Año", "y": "N° Publicaciones"})
+    fig = px.bar(x=counts.index, y=counts.values,
+                 labels={"x": "Año", "y": "N° Publicaciones"})
     fig.update_layout(title="📈 Publicaciones por año")
     return fig
 
 def oa_evolution(df: pd.DataFrame):
     if "Year_clean" not in df or "OpenAccess_flag" not in df: return None
     grouped = df.groupby("Year_clean")["OpenAccess_flag"].mean().mul(100)
-    fig = px.line(x=grouped.index, y=grouped.values, labels={"x": "Año", "y": "% Open Access"})
+    fig = px.line(x=grouped.index, y=grouped.values,
+                  labels={"x": "Año", "y": "% Open Access"})
     fig.update_layout(title="🔓 Evolución de % OA por año")
     return fig
 
@@ -94,37 +89,69 @@ def wordcloud_png(df: pd.DataFrame, col="Title"):
 # ============================================
 # CARGA DE DATOS
 # ============================================
-df = load_dataframe(DEFAULT_XLSX, DEFAULT_SHEET)
+st.sidebar.header("📂 Datos base")
+uploaded = st.sidebar.file_uploader("Sube un XLSX", type=["xlsx"])
+
+if uploaded:
+    df = pd.read_excel(uploaded, sheet_name=0)
+else:
+    df = load_dataframe(DEFAULT_XLSX)
 
 if df.empty:
     st.stop()
 
-# Normalización básica
+# Normalización
 if "Year" in df:
     df["Year_clean"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
 
 if "OpenAccess_flag" not in df:
-    # por compatibilidad: si hay columnas OA de origen
-    df["OpenAccess_flag"] = (
-        df.filter(like="OA_").max(axis=1).fillna(0).astype(int)
-    )
+    if any(c.startswith("OA_") for c in df.columns):
+        df["OpenAccess_flag"] = df.filter(like="OA_").max(axis=1).fillna(0).astype(int)
+    else:
+        df["OpenAccess_flag"] = 0
 
 # ============================================
 # FILTROS
 # ============================================
 st.sidebar.header("Filtros")
 
+# Años
 years = df["Year_clean"].dropna().unique()
 if len(years) > 0:
     min_year, max_year = int(years.min()), int(years.max())
     year_range = st.sidebar.slider("Selecciona rango de años", min_year, max_year, (min_year, max_year))
     df = df[(df["Year_clean"] >= year_range[0]) & (df["Year_clean"] <= year_range[1])]
 
+# Open Access
 oa_filter = st.sidebar.radio("Open Access", ["Todos", "Open Access", "Closed Access"])
 if oa_filter == "Open Access":
     df = df[df["OpenAccess_flag"] == 1]
 elif oa_filter == "Closed Access":
     df = df[df["OpenAccess_flag"] == 0]
+
+# Fuente
+if "Fuente" in df:
+    fuentes = df["Fuente"].dropna().unique().tolist()
+    fuentes_sel = st.sidebar.multiselect("Fuente", fuentes, default=fuentes)
+    df = df[df["Fuente"].isin(fuentes_sel)]
+
+# Cuartil JCR
+if "JCR_Quartile" in df:
+    cuartiles = df["JCR_Quartile"].fillna("Sin cuartil").unique().tolist()
+    cuartiles_sel = st.sidebar.multiselect("Cuartil JCR", cuartiles, default=cuartiles)
+    df = df[df["JCR_Quartile"].fillna("Sin cuartil").isin(cuartiles_sel)]
+
+# Departamentos
+if "Departamento" in df:
+    dptos = df["Departamento"].dropna().unique().tolist()
+    dptos_sel = st.sidebar.multiselect("Departamento", dptos, default=dptos)
+    df = df[df["Departamento"].isin(dptos_sel)]
+
+# Búsqueda en título
+if "Title" in df:
+    keyword = st.sidebar.text_input("Buscar en título")
+    if keyword:
+        df = df[df["Title"].str.contains(keyword, case=False, na=False)]
 
 # ============================================
 # RESUMEN KPI
@@ -157,4 +184,3 @@ with tab3:
 with tab4:
     buf = wordcloud_png(df, col="Title")
     if buf: st.image(buf, use_column_width=True)
-    
