@@ -89,7 +89,28 @@ def _infer_clinical_trial(row):
 # ================================
 # Cargar datos
 # ================================
-df = load_data()
+@st.cache_data
+def load_data():
+    # Lee siempre la PRIMERA hoja del Excel
+    df = pd.read_excel("dataset_unificado_enriquecido_jcr_PLUS.xlsx", sheet_name=0)
+
+    # Normalización de columnas clave
+    if "OpenAccess_flag" in df.columns:
+        df["OpenAccess_flag"] = df["OpenAccess_flag"].astype(str).str.lower().map({"true": True, "false": False})
+
+    if "Quartile_std" not in df.columns and "JCR_Quartile" in df.columns:
+        df["Quartile_std"] = df["JCR_Quartile"]
+
+    if "Journal Impact Factor" not in df.columns:
+        df["Journal Impact Factor"] = 0
+
+    if "Departamento" not in df.columns:
+        df["Departamento"] = df.apply(_infer_department, axis=1)
+
+    # Añadir flag dinámico para ensayos clínicos
+    df["Clinical_trial_flag"] = df.apply(_infer_clinical_trial, axis=1)
+
+    return df
 
 # ================================
 # Sidebar
