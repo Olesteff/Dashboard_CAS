@@ -152,12 +152,21 @@ def extract_authors_cas(affiliations: str) -> str:
 
 
 
-
 def normalize_institution(name: str) -> str:
     if not isinstance(name, str):
         return ""
 
+    # Normalización básica
     key = unidecode.unidecode(name.lower().strip())
+
+    # Reemplazar cualquier guion raro (– — −) por espacio
+    key = re.sub(r"[-–—−]", " ", key)
+
+    # Quitar caracteres no alfabéticos extraños
+    key = re.sub(r"[^a-z0-9 ]", " ", key)
+
+    # Colapsar espacios múltiples
+    key = re.sub(r"\s+", " ", key).strip()
 
     normalization_map = {
         # Chile
