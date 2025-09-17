@@ -58,7 +58,7 @@ def detect_department(affiliation: str) -> str:
     for kw, dep in rules:
         if kw in aff:
             return dep
-    return "Clínica Alemana"  # por defecto neutral
+    return "Clínica Alemana"
 
 def detect_clinical_trial(row: pd.Series) -> bool:
     text = ""
@@ -69,17 +69,30 @@ def detect_clinical_trial(row: pd.Series) -> bool:
     ct_regex = r"(ensayo\s*cl[ií]nico|clinical\s*trial|randomi[sz]ed|phase\s*[i1v]+|double\s*blind|placebo\-controlled)"
     return bool(re.search(ct_regex, text))
 
+def extract_authors_cas(affiliations: str) -> str:
+    """Extrae autores con afiliación Clínica Alemana (CAS, Clinica Alemana)."""
+    if not isinstance(affiliations, str):
+        return ""
+    parts = re.split(r";|\|", affiliations)
+    cas_authors = []
+    for part in parts:
+        if re.search(r"(CAS|CL[IÍ]NICA\s+ALEMANA)", part, flags=re.I):
+            name = part.split(",")[0].strip()
+            if name:
+                cas_authors.append(name)
+    return "; ".join(cas_authors)
+
 # =========================
 # Normalización de columnas
 # =========================
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Year (incluye Year_clean)
+    # Year
     year_col = _first_col(df, ["_Year", "Year", "Publication Year", "PY", "Year_clean"])
     df["Year"] = pd.to_numeric(df[year_col], errors="coerce") if year_col else pd.NA
 
-    # Open Access: usa bandera principal o hace OR de OA_* (evita falsos negativos)
+    # Open Access
     oa_main = _first_col(df, ["OpenAccess_flag", "Open Access", "OA"])
     if oa_main:
         sr = df[oa_main].astype(str).str.lower().str.strip()
@@ -100,12 +113,10 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     jif_col = _first_col(df, ["Journal Impact Factor", "Impact Factor", "JIF", "JIF_2023", "JCR_IF"])
     df["Journal Impact Factor"] = pd.to_numeric(df[jif_col], errors="coerce").fillna(0) if jif_col else 0
 
-    # Quartile (prioriza JIF; acepta JCR/JCI/SJR y variantes)
+    # Quartile
     q_col = _first_col(df, [
-        "JIF Quartile",            # prioridad alta
-        "JCR Quartile", "JCR_Quartile",
-        "JCI Quartile",
-        "SJR Quartile", "SJR_Quartile",
+        "JIF Quartile", "JCR Quartile", "JCR_Quartile",
+        "JCI Quartile", "SJR Quartile", "SJR_Quartile",
         "Quartile_JCR", "quartile_std", "Quartile",
     ])
     if q_col:
@@ -129,19 +140,19 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Ensayos clínicos
     df["ClinicalTrial_flag"] = df.apply(detect_clinical_trial, axis=1)
 
-    # Revistas (evita "nan" como texto)
+    # Revistas
     jr_col = _first_col(df, ["Journal_norm", "Journal", "Source Title", "Publication Name", "Source title"])
-    if jr_col:
-        df["Journal_norm"] = df[jr_col].fillna("").astype(str).replace({"": "—"})
-    else:
-        df["Journal_norm"] = "—"
+    df["Journal_norm"] = df[jr_col].fillna("").astype(str).replace({"": "—"}) if jr_col else "—"
 
-    # Autores (evita "nan" como texto)
+    # Autores (normales)
     a_col = _first_col(df, ["Author Full Names", "Author full names", "Authors"])
-    if a_col:
-        df["Authors_norm"] = df[a_col].fillna("").astype(str)
+    df["Authors_norm"] = df[a_col].fillna("").astype(str) if a_col else ""
+
+    # Autores CAS (desde affiliations)
+    if aff_col:
+        df["Authors_CAS"] = df[aff_col].apply(extract_authors_cas)
     else:
-        df["Authors_norm"] = ""
+        df["Authors_CAS"] = ""
 
     return df
 
@@ -169,7 +180,7 @@ st.sidebar.header("🔎 Filtros")
 if pd.api.types.is_numeric_dtype(df["Year"]) and df["Year"].notna().any():
     y_min, y_max = int(df["Year"].min()), int(df["Year"].max())
 else:
-    y_min, y_max = 1900, 2100  # fallback seguro
+    y_min, y_max = 1900, 2100
 
 year_range = st.sidebar.slider("Años", y_min, y_max, (y_min, y_max))
 oa_filter = st.sidebar.radio("Open Access", ["Todos", "Solo OA", "No OA"])
@@ -243,47 +254,42 @@ with tabs[4]:
     st.plotly_chart(px.bar(journals.sort_values("Publicaciones"), x="Publicaciones", y="Revista", orientation="h", title="Top 20 Revistas"), use_container_width=True)
     st.dataframe(journals)
 
-w# =========================
-# Autores más frecuentes
-# =========================
 with tabs[5]:
     st.subheader("👥 Autores más frecuentes")
-
-    # Buscar la mejor columna de autores
-    a_col = _first_col(dff, [
-        "Authors_norm", "Author Full Names", "Author full names",
-        "Authors", "Author(s)", "AU", "AU_Authors"
-    ])
-
-    if a_col and dff[a_col].notna().any():
-        authors = (
-            dff[a_col].fillna("")
-            .astype(str)
-            .str.split(r";|,|\|")
-            .explode()
-            .str.strip()
-            .replace("", np.nan)
-            .dropna()
-        )
-
-        if not authors.empty:
-            top_authors = authors.value_counts().head(30).reset_index()
-            top_authors.columns = ["Autor", "Publicaciones"]
-
-            st.plotly_chart(
-                px.bar(
-                    top_authors.sort_values("Publicaciones"),
-                    x="Publicaciones", y="Autor",
-                    orientation="h", title="Top 30 Autores"
-                ),
-                use_container_width=True
-            )
-            st.dataframe(top_authors)
-        else:
-            st.info("No se pudieron parsear autores.")
+    authors = (
+        dff["Authors_norm"].fillna("")
+        .astype(str)
+        .str.split(r";|,|\|")
+        .explode()
+        .str.strip()
+        .replace("", np.nan)
+        .dropna()
+    )
+    if not authors.empty:
+        top_authors = authors.value_counts().head(30).reset_index()
+        top_authors.columns = ["Autor", "Publicaciones"]
+        st.plotly_chart(px.bar(top_authors.sort_values("Publicaciones"), x="Publicaciones", y="Autor", orientation="h", title="Top 30 Autores"), use_container_width=True)
+        st.dataframe(top_authors)
     else:
-        st.info("No se encontró columna de autores en el dataset.")
-        
+        st.info("No hay autores parseables.")
+
+    st.subheader("🏥 Autores de Clínica Alemana (CAS)")
+    cas_authors = (
+        dff["Authors_CAS"].fillna("")
+        .astype(str)
+        .str.split(r";")
+        .explode()
+        .str.strip()
+        .replace("", np.nan)
+        .dropna()
+    )
+    if not cas_authors.empty:
+        top_cas = cas_authors.value_counts().head(20).reset_index()
+        top_cas.columns = ["Autor CAS", "Publicaciones"]
+        st.plotly_chart(px.bar(top_cas.sort_values("Publicaciones"), x="Publicaciones", y="Autor CAS", orientation="h", title="Top Autores CAS"), use_container_width=True)
+        st.dataframe(top_cas)
+    else:
+        st.info("No se detectaron autores CAS en las afiliaciones.")
 
 with tabs[6]:
     st.subheader("☁️ Wordcloud de títulos")
@@ -293,7 +299,6 @@ with tabs[6]:
         text = " ".join(dff["Title"].dropna().astype(str).tolist())
         if text.strip():
             wc = WordCloud(width=1200, height=500, background_color="white").generate(text)
-            import matplotlib.pyplot as plt
             fig, ax = plt.subplots(figsize=(10, 4))
             ax.imshow(wc, interpolation="bilinear"); ax.axis("off")
             st.pyplot(fig, use_container_width=True, clear_figure=True)
@@ -301,4 +306,3 @@ with tabs[6]:
             st.info("No hay títulos para construir la nube.")
     except Exception:
         st.info("Instala `wordcloud` para esta pestaña:  `pip install wordcloud`")
-        
