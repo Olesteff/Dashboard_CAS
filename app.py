@@ -83,6 +83,57 @@ def extract_authors_cas(affiliations: str) -> str:
     return "; ".join(cas_authors)
 
 # =========================
+# Utils
+# =========================
+def _first_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+def detect_department(affiliation: str) -> str:
+    ...
+    return "Clínica Alemana"
+
+def detect_clinical_trial(row: pd.Series) -> bool:
+    ...
+    return bool(re.search(ct_regex, text))
+
+def extract_authors_cas(affiliations: str) -> str:
+    ...
+    return "; ".join(cas_authors)
+
+# 👇 Aquí pegas la nueva función
+import unidecode
+
+def normalize_institution(name: str) -> str:
+    if not isinstance(name, str):
+        return ""
+    name = unidecode.unidecode(name.lower())
+    name = re.sub(r"[-,_]", " ", name)
+    name = re.sub(r"\s+", " ", name).strip()
+
+    replacements = {
+        "universidad de chile": "Universidad de Chile",
+        "university of chile": "Universidad de Chile",
+        "uchile": "Universidad de Chile",
+        "pontificia universidad catolica de chile": "PUC Chile",
+        "pontifical catholic university of chile": "PUC Chile",
+        "universidad catolica de chile": "PUC Chile",
+        "clinica alemana universidad del desarrollo": "Clínica Alemana",
+        "clinica alemana": "Clínica Alemana",
+        "alemana clinic": "Clínica Alemana",
+        "universidad del desarrollo": "Universidad del Desarrollo",
+        # ... (aquí va el resto del diccionario)
+    }
+
+    for k, v in replacements.items():
+        if k in name:
+            return v
+    return name.title()
+
+
+# =========================
 # Normalización de columnas
 # =========================
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -456,22 +507,26 @@ with tabs[7]:
 with tabs[8]:
     st.subheader("🌍 Colaboración internacional (instituciones en afiliaciones)")
     if "Affiliations" in dff.columns:
-        # Normalizamos afiliaciones
+        # Normalizamos afiliaciones en texto
         affils = dff["Affiliations"].dropna().astype(str)
         
         # Dividir por ; o , para separar instituciones
         institutions = affils.str.split(r";|,").explode().str.strip()
         
-        # Filtrar instituciones relevantes
+        # Filtrar solo instituciones relevantes
         institutions = institutions[institutions.str.contains(
             r"(univ|universidad|hospital|clinic|institute|school|center|centre)", 
             case=False, na=False
         )]
         
-        # Contar las top instituciones
+        # 👇 Aplicar normalización para unificar nombres
+        institutions = institutions.apply(normalize_institution)
+        
+        # Contar top instituciones
         top_institutions = institutions.value_counts().head(15).reset_index()
         top_institutions.columns = ["Institución", "Publicaciones"]
 
+        # Mostrar gráfico
         st.plotly_chart(
             px.bar(
                 top_institutions.sort_values("Publicaciones"),
@@ -480,6 +535,8 @@ with tabs[8]:
             ),
             use_container_width=True
         )
+
+        # Mostrar tabla
         st.dataframe(top_institutions)
     else:
         st.info("No se encontraron instituciones en las afiliaciones.")
