@@ -243,26 +243,47 @@ with tabs[4]:
     st.plotly_chart(px.bar(journals.sort_values("Publicaciones"), x="Publicaciones", y="Revista", orientation="h", title="Top 20 Revistas"), use_container_width=True)
     st.dataframe(journals)
 
+w# =========================
+# Autores más frecuentes
+# =========================
 with tabs[5]:
     st.subheader("👥 Autores más frecuentes")
-    # Fallback por si Authors_norm no existe (no debería pasar, pero evitamos KeyError)
-    a_series = dff["Authors_norm"] if "Authors_norm" in dff.columns else dff.get(_first_col(dff, ["Author Full Names","Author full names","Authors"]), pd.Series([], dtype=str))
-    authors = (
-        a_series.fillna("")
-        .astype(str)
-        .str.split(r";|,|\|")
-        .explode()
-        .str.strip()
-        .replace("", np.nan)
-        .dropna()
-    )
-    if not authors.empty:
-        top_authors = authors.value_counts().head(30).reset_index()
-        top_authors.columns = ["Autor", "Publicaciones"]
-        st.plotly_chart(px.bar(top_authors.sort_values("Publicaciones"), x="Publicaciones", y="Autor", orientation="h", title="Top 30 Autores"), use_container_width=True)
-        st.dataframe(top_authors)
+
+    # Buscar la mejor columna de autores
+    a_col = _first_col(dff, [
+        "Authors_norm", "Author Full Names", "Author full names",
+        "Authors", "Author(s)", "AU", "AU_Authors"
+    ])
+
+    if a_col and dff[a_col].notna().any():
+        authors = (
+            dff[a_col].fillna("")
+            .astype(str)
+            .str.split(r";|,|\|")
+            .explode()
+            .str.strip()
+            .replace("", np.nan)
+            .dropna()
+        )
+
+        if not authors.empty:
+            top_authors = authors.value_counts().head(30).reset_index()
+            top_authors.columns = ["Autor", "Publicaciones"]
+
+            st.plotly_chart(
+                px.bar(
+                    top_authors.sort_values("Publicaciones"),
+                    x="Publicaciones", y="Autor",
+                    orientation="h", title="Top 30 Autores"
+                ),
+                use_container_width=True
+            )
+            st.dataframe(top_authors)
+        else:
+            st.info("No se pudieron parsear autores.")
     else:
-        st.info("No hay autores parseables.")
+        st.info("No se encontró columna de autores en el dataset.")
+        
 
 with tabs[6]:
     st.subheader("☁️ Wordcloud de títulos")
