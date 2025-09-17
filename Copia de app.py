@@ -10,10 +10,13 @@ def load_data():
     file_path = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
     df = pd.read_excel(file_path)
 
-    # Normalizar año a enteros
+    # Normalizar año y renombrar
     if "Year_clean" in df.columns:
-        df["Year_clean"] = pd.to_numeric(df["Year_clean"], errors="coerce").astype("Int64")
-        df = df.dropna(subset=["Year_clean"])
+        df["Año"] = pd.to_numeric(df["Year_clean"], errors="coerce").astype("Int64")
+        df = df.dropna(subset=["Año"])
+    elif "Year" in df.columns:
+        df["Año"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
+        df = df.dropna(subset=["Año"])
 
     return df
 
@@ -25,8 +28,8 @@ df = load_data()
 st.sidebar.header("Filtros")
 
 # --- Filtro de años con slider ---
-min_year = int(df["Year_clean"].min())
-max_year = int(df["Year_clean"].max())
+min_year = int(df["Año"].min())
+max_year = int(df["Año"].max())
 year_range = st.sidebar.slider(
     "Selecciona rango de años",
     min_value=min_year,
@@ -34,7 +37,7 @@ year_range = st.sidebar.slider(
     value=(min_year, max_year),
     step=1
 )
-df = df[(df["Year_clean"] >= year_range[0]) & (df["Year_clean"] <= year_range[1])]
+df = df[(df["Año"] >= year_range[0]) & (df["Año"] <= year_range[1])]
 
 # --- Filtro Open Access ---
 oa_filter = st.sidebar.radio("Open Access", ["Todos", "Open Access", "Closed Access"])
@@ -61,7 +64,12 @@ if quartile_col:
 # =========================
 st.title("📊 Dashboard Producción Científica CAS-UDD")
 
-tab1, tab2, tab3 = st.tabs(["📌 Resumen general", "📚 Revistas", "🔓 Open Access"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📌 Resumen general",
+    "📚 Revistas",
+    "🏥 Departamentos",
+    "🔓 Open Access"
+])
 
 # --- Resumen General ---
 with tab1:
@@ -79,34 +87,26 @@ with tab1:
         else:
             st.metric("Promedio JIF", "N/A")
 
-    # Gráfico cuartiles JCR
-    if quartile_col:
-        quartile_counts = df[quartile_col].fillna("Sin cuartil").value_counts()
-        fig_q = px.pie(
-            names=quartile_counts.index,
-            values=quartile_counts.values,
-            hole=0.4,
-            color=quartile_counts.index,
-            color_discrete_map={
-                "Q1": "green",
-                "Q2": "yellow",
-                "Q3": "orange",
-                "Q4": "darkred",
-                "Sin cuartil": "lightgrey"
-            }
-        )
-        fig_q.update_traces(textposition="inside", textinfo="percent+label", pull=[0.05]*len(quartile_counts))
-        st.plotly_chart(fig_q, use_container_width=True)
-
     # Publicaciones por año
-    pubs_per_year = df.groupby("Year_clean").size().reset_index(name="N° Publicaciones")
+    pubs_per_year = df.groupby("Año").size().reset_index(name="N° Publicaciones")
     fig_pub_year = px.bar(
         pubs_per_year,
-        x="Year_clean",
+        x="Año",
         y="N° Publicaciones",
         title="📈 Publicaciones por año"
     )
     st.plotly_chart(fig_pub_year, use_container_width=True)
+
+    # Promedio JIF por año
+    if "Journal Impact Factor" in df.columns:
+        jif_year = df.groupby("Año")["Journal Impact Factor"].mean().reset_index()
+        fig_jif = px.line(
+            jif_year,
+            x="Año",
+            y="Journal Impact Factor",
+            title="📈 Promedio JIF por año"
+        )
+        st.plotly_chart(fig_jif, use_container_width=True)
 
 # --- Revistas ---
 with tab2:
@@ -114,22 +114,80 @@ with tab2:
     if "Source title" in df.columns:
         top_journals = df["Source title"].value_counts().head(10).reset_index()
         top_journals.columns = ["Revista", "N° Publicaciones"]
-        fig_journals = px.bar(top_journals, x="Revista", y="N° Publicaciones", text="N° Publicaciones")
+        fig_journals = px.bar(
+            top_journals,
+            x="Revista",
+            y="N° Publicaciones",
+            text="N° Publicaciones",
+            title="🔝 Top 10 Revistas por publicaciones"
+        )
         fig_journals.update_traces(textposition="outside")
         st.plotly_chart(fig_journals, use_container_width=True)
         st.dataframe(top_journals)
 
-# --- Open Access ---
+    # Revistas con mayor JIF promedio
+    if "Journal Impact Factor" in df.columns and "Source title" in df.columns:
+        jif_journals = df.groupby("Source title")["Journal Impact Factor"].mean().reset_index()
+        top_jif = jif_journals.sort_values(by="Journal Impact Factor", ascending=False).head(10)
+        fig_top_jif = px.bar(
+            top_jif,
+            x="Source title",
+            y="Journal Impact Factor",
+            title="🔝 Top 10 Revistas por JIF promedio",
+            text="Journal Impact Factor"
+        )
+        fig_top_jif.update_traces(textposition="outside")
+        st.plotly_chart(fig_top_jif, use_container_width=True)
+
+# --- Departamentos ---
 with tab3:
+    st.subheader("🏥 Publicaciones por Departamento")
+    dept_col = None
+    for cand in ["Departamento", "Department", "Dept", "Main Department"]:
+        if cand in df.columns:
+            dept_col = cand
+            break
+
+    if dept_col:
+        dept_counts = df[dept_col].value_counts().reset_index()
+        dept_counts.columns = ["Departamento", "N° Publicaciones"]
+        fig_dept = px.bar(
+            dept_counts.head(15),
+            x="N° Publicaciones",
+            y="Departamento",
+            orientation="h",
+            title="🏥 Top 15 Departamentos por publicaciones"
+        )
+        st.plotly_chart(fig_dept, use_container_width=True)
+        st.dataframe(dept_counts)
+
+# --- Open Access ---
+with tab4:
     st.subheader("🔓 Evolución del Open Access")
+
+    # Evolución de OA por año
     if "OpenAccess_flag" in df.columns:
-        oa_trend = df.groupby("Year_clean")["OpenAccess_flag"].mean().reset_index()
+        oa_trend = df.groupby("Año")["OpenAccess_flag"].mean().reset_index()
         oa_trend["OpenAccess_flag"] *= 100
         fig_oa = px.line(
             oa_trend,
-            x="Year_clean",
+            x="Año",
             y="OpenAccess_flag",
             title="📈 Evolución de % OA por año"
         )
         fig_oa.update_traces(mode="lines+markers")
         st.plotly_chart(fig_oa, use_container_width=True)
+
+    # OA por cuartil
+    if "OpenAccess_flag" in df.columns and quartile_col:
+        oa_quartile = df.groupby(quartile_col)["OpenAccess_flag"].mean().reset_index()
+        oa_quartile["OpenAccess_flag"] *= 100
+        fig_oa_q = px.bar(
+            oa_quartile,
+            x=quartile_col,
+            y="OpenAccess_flag",
+            title="📊 % OA por cuartil JCR",
+            text="OpenAccess_flag"
+        )
+        fig_oa_q.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        st.plotly_chart(fig_oa_q, use_container_width=True)

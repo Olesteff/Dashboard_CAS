@@ -1,26 +1,41 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from io import BytesIO
 
 # =========================
 # 📥 Carga de datos
 # =========================
 @st.cache_data
-def load_data():
+def load_default_data():
     file_path = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
     df = pd.read_excel(file_path)
-
-    # Normalizar año y renombrar
-    if "Year_clean" in df.columns:
-        df["Año"] = pd.to_numeric(df["Year_clean"], errors="coerce").astype("Int64")
-        df = df.dropna(subset=["Año"])
-    elif "Year" in df.columns:
-        df["Año"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
-        df = df.dropna(subset=["Año"])
-
     return df
 
-df = load_data()
+def normalize_years(df):
+    if "Year_clean" in df.columns:
+        df["Año"] = pd.to_numeric(df["Year_clean"], errors="coerce").astype("Int64")
+    elif "Year" in df.columns:
+        df["Año"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
+    df = df.dropna(subset=["Año"])
+    return df
+
+# =========================
+# 📂 Importación de dataset
+# =========================
+st.sidebar.header("Carga de datos")
+uploaded_file = st.sidebar.file_uploader("📂 Subir dataset (Excel o CSV)", type=["xlsx", "csv"])
+
+if uploaded_file:
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+else:
+    st.sidebar.info("Usando dataset por defecto")
+    df = load_default_data()
+
+df = normalize_years(df)
 
 # =========================
 # 🎛️ Filtros en sidebar
@@ -46,7 +61,7 @@ if oa_filter == "Open Access":
 elif oa_filter == "Closed Access":
     df = df[df["OpenAccess_flag"] == False]
 
-# --- Filtro de cuartil JCR (detectar columna automáticamente) ---
+# --- Filtro de cuartil JCR ---
 quartile_col = None
 for cand in ["JCR_Quartile", "JIF Quartile", "Quartile", "Quartil", "Quartile JCR"]:
     if cand in df.columns:
@@ -58,6 +73,34 @@ if quartile_col:
     selected_quartiles = st.sidebar.multiselect("Cuartil JCR", options=quartiles, default=quartiles)
     if selected_quartiles:
         df = df[df[quartile_col].isin(selected_quartiles)]
+
+# =========================
+# 💾 Botones de descarga
+# =========================
+st.sidebar.subheader("Descargar datos filtrados")
+
+def to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Datos_filtrados")
+    return output.getvalue()
+
+csv_data = df.to_csv(index=False).encode("utf-8")
+excel_data = to_excel(df)
+
+st.sidebar.download_button(
+    label="⬇️ Descargar CSV",
+    data=csv_data,
+    file_name="dataset_filtrado.csv",
+    mime="text/csv"
+)
+
+st.sidebar.download_button(
+    label="⬇️ Descargar Excel",
+    data=excel_data,
+    file_name="dataset_filtrado.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
 # =========================
 # 📊 Layout con tabs
@@ -87,7 +130,6 @@ with tab1:
         else:
             st.metric("Promedio JIF", "N/A")
 
-    # Publicaciones por año
     pubs_per_year = df.groupby("Año").size().reset_index(name="N° Publicaciones")
     fig_pub_year = px.bar(
         pubs_per_year,
@@ -97,7 +139,6 @@ with tab1:
     )
     st.plotly_chart(fig_pub_year, use_container_width=True)
 
-    # Promedio JIF por año
     if "Journal Impact Factor" in df.columns:
         jif_year = df.groupby("Año")["Journal Impact Factor"].mean().reset_index()
         fig_jif = px.line(
@@ -125,7 +166,6 @@ with tab2:
         st.plotly_chart(fig_journals, use_container_width=True)
         st.dataframe(top_journals)
 
-    # Revistas con mayor JIF promedio
     if "Journal Impact Factor" in df.columns and "Source title" in df.columns:
         jif_journals = df.groupby("Source title")["Journal Impact Factor"].mean().reset_index()
         top_jif = jif_journals.sort_values(by="Journal Impact Factor", ascending=False).head(10)
@@ -165,7 +205,6 @@ with tab3:
 with tab4:
     st.subheader("🔓 Evolución del Open Access")
 
-    # Evolución de OA por año
     if "OpenAccess_flag" in df.columns:
         oa_trend = df.groupby("Año")["OpenAccess_flag"].mean().reset_index()
         oa_trend["OpenAccess_flag"] *= 100
@@ -178,7 +217,6 @@ with tab4:
         fig_oa.update_traces(mode="lines+markers")
         st.plotly_chart(fig_oa, use_container_width=True)
 
-    # OA por cuartil
     if "OpenAccess_flag" in df.columns and quartile_col:
         oa_quartile = df.groupby(quartile_col)["OpenAccess_flag"].mean().reset_index()
         oa_quartile["OpenAccess_flag"] *= 100
