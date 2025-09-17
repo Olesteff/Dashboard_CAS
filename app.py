@@ -68,50 +68,6 @@ def _df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Datos") -> Optional[b
     return None
 
 # =========================
-# FUNCIONES AUXILIARES
-# =========================
-def detectar_departamento(row):
-    text = str(row.get("Authors with affiliations", "")) + " " + str(row.get("Affiliations", ""))
-    text = text.lower()
-
-    if "neurolog" in text or "psiquiatr" in text:
-        return "Neurología y Psiquiatría"
-    if "oncolog" in text:
-        return "Oncología"
-    if "pediatr" in text:
-        return "Pediatría"
-    if "ginecolog" in text or "obstet" in text:
-        return "Ginecología y Obstetricia"
-    if "cirug" in text:
-        return "Cirugía"
-    if "trauma" in text or "ortop" in text:
-        return "Traumatología y Ortopedia"
-    if "medicina interna" in text:
-        return "Medicina Interna"
-    if "enfermer" in text:
-        return "Enfermería"
-    if "imágenes" in text or "radiolog" in text:
-        return "Imágenes"
-    return "Sin asignar"
-
-def detectar_ensayo_clinico(row):
-    text = str(row.get("Publication Type", "")) + " " + str(row.get("Article Title", ""))
-    text = text.lower()
-    if "clinical trial" in text or "ensayo clínico" in text:
-        return True
-    return False
-
-@st.cache_data
-def load_data(uploaded=None):
-    if uploaded is not None:
-        return pd.read_excel(uploaded, sheet_name=DEFAULT_SHEET)
-
-    if Path(DEFAULT_XLSX).exists():
-        return pd.read_excel(DEFAULT_XLSX, sheet_name=DEFAULT_SHEET)
-
-    return pd.DataFrame()
-
-# =========================
 # Carga
 # =========================
 @st.cache_data(show_spinner=False)
@@ -374,12 +330,6 @@ if sel_q:
 if sel_dep:
     patt = "|".join(re.escape(x) for x in sel_dep)
     mask &= df["Departamento"].fillna("").str.contains(patt)
-
-depart_filter = st.sidebar.multiselect(
-    "Departamento",
-    options=df["Departamento_detectado"].unique(),
-    default=[]
-)
 
 if qtxt and "Title" in df.columns:
     mask &= df["Title"].fillna("").str.contains(qtxt, case=False, na=False)
