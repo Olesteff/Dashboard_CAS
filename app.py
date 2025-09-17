@@ -104,17 +104,17 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     oa_col = _first_col(df, ["OpenAccess_flag", "Open Access", "OA"])
     df["OpenAccess_flag"] = _coerce_bool(df[oa_col]) if oa_col else False
 
-    # Clinical trials
-    text = (
-        df.get("Title","").astype(str) + " " +
-        df.get("Abstract","").astype(str) + " " +
-        df.get("Publication Type","").astype(str) + " " +
-        df.get("Keywords","").astype(str)
-    ).str.lower()
+    # Clinical trials (detección textual robusta)
+    title = df.get("Title", pd.Series("", index=df.index)).astype(str)
+    abstract = df.get("Abstract", pd.Series("", index=df.index)).astype(str)
+    ptype = df.get("Publication Type", pd.Series("", index=df.index)).astype(str)
+    keywords = df.get("Keywords", pd.Series("", index=df.index)).astype(str)
+
+    text = (title + " " + abstract + " " + ptype + " " + keywords).str.lower()
     ct_regex = r"(ensayo\s*cl[ií]nico|clinical\s*trial|randomi[sz]ed|phase\s*[i1v]+|double\s*blind|placebo\-controlled)"
     df["ClinicalTrial_flag"] = text.str.contains(ct_regex, regex=True, na=False)
 
-    # Sponsor (detectado pero no mostrado)
+    # Sponsor (detectado pero no mostrado en pestañas)
     fund_cols = [c for c in df.columns if re.search(r"(fund|grant|sponsor|financ)", c, flags=re.I)]
     if fund_cols:
         fund_text = df[fund_cols].astype(str).agg(" ".join, axis=1)
@@ -168,6 +168,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
             if kw in a:
                 return dep
         return "Sin asignar"
+
     df["Departamento"] = df.get(aff_col, pd.Series("", index=df.index)).map(detect_department)
 
     return df
