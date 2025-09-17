@@ -254,88 +254,6 @@ with tabs[4]:
     st.plotly_chart(px.bar(journals.sort_values("Publicaciones"), x="Publicaciones", y="Revista", orientation="h", title="Top 20 Revistas"), use_container_width=True)
     st.dataframe(journals)
 
-
-with tabs[5]:
-    st.subheader("🏥 Autores de Clínica Alemana (CAS)")
-    cas_authors = (
-        dff["Authors_CAS"].fillna("")
-        .astype(str)
-        .str.split(r";")
-        .explode()
-        .str.strip()
-        .replace("", np.nan)
-        .dropna()
-    )
-    if not cas_authors.empty:
-        top_cas = cas_authors.value_counts().head(20).reset_index()
-        top_cas.columns = ["Autor CAS", "Publicaciones"]
-
-        fig = px.bar(
-            top_cas,
-            x="Publicaciones",
-            y="Autor CAS",
-            orientation="h",
-            title="Top Autores CAS",
-        )
-
-        fig.update_layout(
-            yaxis=dict(categoryorder="total ascending"),
-            margin=dict(l=250),
-            yaxis_tickfont=dict(size=11)
-        )
-
-        # 👇 Solo mostrar número dentro de la barra
-        fig.update_traces(
-            text=top_cas["Publicaciones"],
-            textposition="inside",
-            insidetextanchor="start"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(top_cas)
-    else:
-        st.info("No se detectaron autores CAS en las afiliaciones.")
-
-    st.subheader("🏥 Autores de Clínica Alemana (CAS)")
-    cas_authors = (
-        dff["Authors_CAS"].fillna("")
-        .astype(str)
-        .str.split(r";")
-        .explode()
-        .str.strip()
-        .replace("", np.nan)
-        .dropna()
-    )
-    if not cas_authors.empty:
-        top_cas = cas_authors.value_counts().head(20).reset_index()
-        top_cas.columns = ["Autor CAS", "Publicaciones"]
-        st.plotly_chart(px.bar(top_cas.sort_values("Publicaciones"), x="Publicaciones", y="Autor CAS", orientation="h", title="Top Autores CAS"), use_container_width=True)
-        st.dataframe(top_cas)
-    else:
-        st.info("No se detectaron autores CAS en las afiliaciones.")
-
-
-with tabs[6]:
-    st.subheader("☁️ Wordcloud de títulos")
-    try:
-        from wordcloud import WordCloud, STOPWORDS
-
-custom_stopwords = set(STOPWORDS)
-custom_stopwords.update([
-    # Español
-    "el","la","los","las","un","una","unos","unas","de","del","y","en","por","para","con",
-    # Inglés
-    "the","a","an","of","for","to","with","on","at","by","from","they","their","this","that","these","those"
-])
-
-st.subheader("☁️ Wordcloud de títulos")
-text = " ".join(dff["Title"].dropna().astype(str).tolist())
-if text.strip():
-    wc = WordCloud(
-        width=1200, height=500,
-        background_color="white",
-        stopwords=custom_stopwords
-    ).generate(text)
 with tabs[5]:
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
     cas_authors = (
@@ -363,7 +281,6 @@ with tabs[5]:
             margin=dict(l=250),
             yaxis_tickfont=dict(size=11)
         )
-        # 👇 Solo mostrar número dentro de la barra
         fig.update_traces(
             text=top_cas["Publicaciones"],
             textposition="inside",
@@ -404,7 +321,6 @@ with tabs[6]:
             st.info("No hay títulos para construir la nube.")
     except Exception:
         st.info("Instala `wordcloud` para esta pestaña:  `pip install wordcloud`")
-
 
 # =========================
 # Módulo de carga y merge
@@ -464,4 +380,4 @@ if not new_df.empty and btn_prev:
 
 if not new_df.empty and btn_apply:
     df = merge_apply(df, new_df)
-    st.sidebar.success(f"Unión aplicada. Registros ahora: {len(df):,}")
+    st.sidebar.success(f"Unión aplicada. Registros ahora: {
