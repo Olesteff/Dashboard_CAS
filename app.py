@@ -43,11 +43,18 @@ if oa_filter == "Open Access":
 elif oa_filter == "Closed Access":
     df = df[df["OpenAccess_flag"] == False]
 
-# --- Filtro de cuartil JCR ---
-quartiles = df["JCR_Quartile"].dropna().unique().tolist()
-selected_quartiles = st.sidebar.multiselect("Cuartil JCR", options=quartiles, default=quartiles)
-if selected_quartiles:
-    df = df[df["JCR_Quartile"].isin(selected_quartiles)]
+# --- Filtro de cuartil JCR (detectar columna automáticamente) ---
+quartile_col = None
+for cand in ["JCR_Quartile", "JIF Quartile", "Quartile", "Quartil", "Quartile JCR"]:
+    if cand in df.columns:
+        quartile_col = cand
+        break
+
+if quartile_col:
+    quartiles = df[quartile_col].dropna().unique().tolist()
+    selected_quartiles = st.sidebar.multiselect("Cuartil JCR", options=quartiles, default=quartiles)
+    if selected_quartiles:
+        df = df[df[quartile_col].isin(selected_quartiles)]
 
 # =========================
 # 📊 Layout con tabs
@@ -73,8 +80,8 @@ with tab1:
             st.metric("Promedio JIF", "N/A")
 
     # Gráfico cuartiles JCR
-    if "JCR_Quartile" in df.columns:
-        quartile_counts = df["JCR_Quartile"].fillna("Sin cuartil").value_counts()
+    if quartile_col:
+        quartile_counts = df[quartile_col].fillna("Sin cuartil").value_counts()
         fig_q = px.pie(
             names=quartile_counts.index,
             values=quartile_counts.values,
