@@ -9,7 +9,7 @@ st.set_page_config(page_title="Dashboard CAS-UDD", layout="wide")
 
 @st.cache_data
 def load_data():
-    df = pd.read_excel("dataset_unificado_enriquecido_jcr_PLUS-10.xlsx", sheet_name="Consolidado_enriq")
+    df = pd.read_excel("dataset_unificado_enriquecido_jcr_PLUS.xlsx", sheet_name="Consolidado_enriq")
     
     # Normalizar año
     if "Year" in df.columns:
