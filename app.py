@@ -172,7 +172,7 @@ def normalize_institution(name: str) -> str:
 
         # Clínica Alemana - UDD
         "clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-        "Clínica Alemana - Universidad del Desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "Clínica Alemana-Universidad del Desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "facultad de medicina clinica alemana - universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
