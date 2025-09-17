@@ -1,4 +1,4 @@
-# app_dashboard.py
+# app.py
 from __future__ import annotations
 
 import re
@@ -213,6 +213,25 @@ c3.metric("📈 Suma JIF", f"{dff['Journal Impact Factor'].sum():.1f}")
 c4.metric("🧪 Ensayos clínicos", int(dff["ClinicalTrial_flag"].sum()))
 
 # =========================
+# KPIs adicionales
+# =========================
+if "Cited by" in dff.columns:
+    total_citas = pd.to_numeric(dff["Cited by"], errors="coerce").fillna(0)
+elif "Times Cited" in dff.columns:
+    total_citas = pd.to_numeric(dff["Times Cited"], errors="coerce").fillna(0)
+else:
+    total_citas = pd.Series([0]*len(dff))
+
+h_index = int(sum(total_citas.sort_values(ascending=False).reset_index(drop=True) >= 
+                  (np.arange(len(total_citas)) + 1)))
+
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("📖 Total citas", int(total_citas.sum()))
+c6.metric("📖 Promedio citas", f"{total_citas.mean():.1f}")
+c7.metric("🏆 % en Q1", f"{100 * (dff['Quartile']=='Q1').mean():.1f}%")
+c8.metric("📊 h-index", h_index)
+
+# =========================
 # Tabs
 # =========================
 tabs = st.tabs([
@@ -418,6 +437,54 @@ with tabs[6]:
             st.info("No hay títulos para construir la nube.")
     except ImportError:
         st.error("Para usar wordcloud, instala: `pip install wordcloud`")
+
+        with tabs[7]:
+    st.subheader("📖 Citas por año")
+    if not total_citas.empty:
+        citas_year = dff.groupby("Year")[total_citas.name].sum().reset_index()
+        st.plotly_chart(px.bar(citas_year, x="Year", y=total_citas.name, title="Citas por Año"), use_container_width=True)
+    else:
+        st.info("No hay datos de citas en este dataset.")
+
+with tabs[8]:
+    st.subheader("🌍 Colaboración internacional (países en afiliaciones)")
+    if "Affiliations" in dff.columns:
+        countries = dff["Affiliations"].dropna().astype(str).str.extractall(r"\b([A-Z][a-z]+)\b")[0]
+        top_countries = countries.value_counts().head(15).reset_index()
+        top_countries.columns = ["País", "Publicaciones"]
+        st.plotly_chart(px.bar(top_countries.sort_values("Publicaciones"),
+                               x="Publicaciones", y="País", orientation="h",
+                               title="Top Países en Afiliaciones"), use_container_width=True)
+        st.dataframe(top_countries)
+    else:
+        st.info("No se encontraron países en las afiliaciones.")
+
+with tabs[9]:
+    st.subheader("💰 Financiamiento")
+    if "Funding Orgs" in dff.columns:
+        funded = dff["Funding Orgs"].dropna().astype(str)
+        st.metric("📊 % con financiamiento", f"{100 * funded.notna().mean():.1f}%")
+        top_funding = funded.value_counts().head(10).reset_index()
+        top_funding.columns = ["Agencia", "Publicaciones"]
+        st.plotly_chart(px.bar(top_funding.sort_values("Publicaciones"),
+                               x="Publicaciones", y="Agencia", orientation="h",
+                               title="Top agencias financiadoras"), use_container_width=True)
+        st.dataframe(top_funding)
+    else:
+        st.info("No hay información de financiamiento en este dataset.")
+
+with tabs[10]:
+    st.subheader("🌱 Publicaciones por ODS")
+    if "SDG" in dff.columns:
+        sdg = dff["SDG"].dropna().astype(str).str.split(";").explode().str.strip()
+        sdg_counts = sdg.value_counts().reset_index()
+        sdg_counts.columns = ["ODS", "Publicaciones"]
+        st.plotly_chart(px.bar(sdg_counts.sort_values("Publicaciones"),
+                               x="Publicaciones", y="ODS", orientation="h",
+                               title="Distribución por ODS"), use_container_width=True)
+        st.dataframe(sdg_counts)
+    else:
+        st.info("No hay información de ODS en este dataset.")
 
 
 # =========================
