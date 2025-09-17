@@ -1,147 +1,144 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
+from pathlib import Path
 
-st.set_page_config(page_title="Dashboard CAS-UDD", layout="wide")
+# =============================
+# CONFIGURACIÓN INICIAL
+# =============================
+st.set_page_config(
+    page_title="Dashboard Producción Científica CAS–UDD",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# Archivo por defecto
+DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
+DEFAULT_SHEET = "Consolidado_enriq"
+
+# =============================
+# CARGA DE DATOS
+# =============================
 @st.cache_data
-def load_data():
-    df = pd.read_excel("dataset_unificado_enriquecido_jcr_PLUS.xlsx", sheet_name="Consolidado_enriq")
-    
-    # Normalizar año
+def load_data(path=DEFAULT_XLSX, sheet_name=DEFAULT_SHEET):
+    df = pd.read_excel(path, sheet_name=sheet_name)
+
+    # Normalización básica
     if "Year" in df.columns:
         df["Year"] = pd.to_numeric(df["Year"], errors="coerce").fillna(0).astype(int)
-    
-    # Normalizar OA
-    if "OpenAccess_flag" in df.columns:
-        df["OpenAccess_flag"] = df["OpenAccess_flag"].astype(bool)
     else:
-        df["OpenAccess_flag"] = False
+        df["Year"] = 0
 
-    # Normalizar cuartiles
-    if "Quartile_std" in df.columns:
-        df["Quartile_std"] = df["Quartile_std"].astype(str).str.upper().replace({
-            "1": "Q1", "2": "Q2", "3": "Q3", "4": "Q4", "SIN CUARTIL": "Sin cuartil"
-        })
-    else:
+    if "Quartile_std" not in df.columns:
         df["Quartile_std"] = "Sin cuartil"
 
-    # Normalizar depto
     if "Departamento" not in df.columns:
         df["Departamento"] = "Sin asignar"
-    
-    # Flags
-    for col in ["Has_Sponsor", "ClinicalTrial_flag"]:
-        if col not in df.columns:
-            df[col] = False
-    
+
+    if "Open Access" not in df.columns:
+        df["Open Access"] = "Desconocido"
+
     return df
 
-df = load_data()
+# Subida manual
+st.sidebar.header("📂 Datos base")
+uploaded_file = st.sidebar.file_uploader("Sube un XLSX", type=["xlsx"])
+if uploaded_file:
+    df = load_data(uploaded_file)
+else:
+    if Path(DEFAULT_XLSX).exists():
+        df = load_data()
+    else:
+        st.error("No se encontró el archivo base. Sube un XLSX.")
+        st.stop()
 
-# -------------------- Sidebar filtros --------------------
+# =============================
+# FILTROS
+# =============================
 st.sidebar.header("Filtros")
 
-years = sorted(df["Year"].dropna().unique())
-year_min, year_max = st.sidebar.select_slider("Rango de años", options=years, value=(min(years), max(years)))
-df = df[(df["Year"] >= year_min) & (df["Year"] <= year_max)]
+# Rango de años
+min_year, max_year = int(df["Year"].min()), int(df["Year"].max())
+year_range = st.sidebar.slider("Selecciona rango de años", min_year, max_year, (min_year, max_year))
 
-oa_filter = st.sidebar.multiselect("Open Access", ["Sí", "No"])
-if oa_filter:
-    if "Sí" in oa_filter:
-        df = df[df["OpenAccess_flag"] == True]
-    if "No" in oa_filter:
-        df = df[df["OpenAccess_flag"] == False]
+# Open Access
+oa_opts = ["Todos", "Open Access", "Closed Access"]
+oa_filter = st.sidebar.radio("Open Access", oa_opts)
 
-quartiles = st.sidebar.multiselect("Cuartiles", df["Quartile_std"].unique())
-if quartiles:
-    df = df[df["Quartile_std"].isin(quartiles)]
+# Cuartiles
+quartile_opts = sorted(df["Quartile_std"].dropna().unique().tolist())
+quartile_sel = st.sidebar.multiselect("Cuartil JCR/SJR", quartile_opts, default=quartile_opts)
 
-departamentos = st.sidebar.multiselect("Departamentos", df["Departamento"].unique())
-if departamentos:
-    df = df[df["Departamento"].isin(departamentos)]
+# Departamentos
+dept_opts = sorted(df["Departamento"].dropna().unique().tolist())
+dept_sel = st.sidebar.multiselect("Departamento", dept_opts, default=dept_opts)
 
-search_title = st.sidebar.text_input("Buscar en títulos")
-if search_title:
-    df = df[df["Title"].str.contains(search_title, case=False, na=False)]
+# Búsqueda en título
+title_search = st.sidebar.text_input("Buscar en título")
 
-# -------------------- KPIs --------------------
-st.title("📊 Dashboard Producción Científica CAS-UDD")
+# =============================
+# APLICAR FILTROS
+# =============================
+dff = df[
+    (df["Year"].between(year_range[0], year_range[1])) &
+    (df["Quartile_std"].isin(quartile_sel)) &
+    (df["Departamento"].isin(dept_sel))
+]
+
+if oa_filter == "Open Access":
+    dff = dff[dff["Open Access"].str.contains("Open", case=False, na=False)]
+elif oa_filter == "Closed Access":
+    dff = dff[~dff["Open Access"].str.contains("Open", case=False, na=False)]
+
+if title_search:
+    dff = dff[dff["Title"].str.contains(title_search, case=False, na=False)]
+
+# =============================
+# DASHBOARD
+# =============================
+st.title("📊 Dashboard de Producción Científica – CAS–UDD")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total publicaciones", len(df))
-col2.metric("Open Access (%)", f"{df['OpenAccess_flag'].mean()*100:.1f}%")
-col3.metric("Ensayos clínicos", int(df["ClinicalTrial_flag"].sum()))
-col4.metric("Con sponsor", int(df["Has_Sponsor"].sum()))
+with col1:
+    st.metric("Total publicaciones", len(dff))
+with col2:
+    pct_oa = (dff["Open Access"].str.contains("Open", case=False, na=False).mean() * 100) if len(dff) > 0 else 0
+    st.metric("% Open Access", f"{pct_oa:.1f}%")
+with col3:
+    ensayos = dff[dff["Tipo"].str.contains("clinical trial", case=False, na=False)] if "Tipo" in dff.columns else []
+    st.metric("Ensayos clínicos detectados", len(ensayos))
+with col4:
+    sponsors = dff[dff["Funding sponsor"].notna()] if "Funding sponsor" in dff.columns else []
+    st.metric("Publicaciones con sponsor detectado", len(sponsors))
 
-# -------------------- Tabs --------------------
-tabs = st.tabs([
-    "📈 Publicaciones por año",
-    "🧩 Distribución por cuartiles",
-    "🔓 Open Access",
-    "🏥 Departamentos",
-    "📚 Revistas",
-    "👩‍🔬 Autores",
-    "☁️ Nube de palabras"
-])
+# =============================
+# GRÁFICOS
+# =============================
+st.subheader("📈 Publicaciones por año")
+pubs_year = dff.groupby("Year").size().reset_index(name="Publicaciones")
+fig_year = px.bar(pubs_year, x="Year", y="Publicaciones")
+st.plotly_chart(fig_year, use_container_width=True)
 
-# 1. Publicaciones por año
-with tabs[0]:
-    pubs_year = df.groupby("Year").size().reset_index(name="Publicaciones")
-    fig = px.bar(pubs_year, x="Year", y="Publicaciones", title="Publicaciones por año")
-    st.plotly_chart(fig, use_container_width=True)
+st.subheader("📊 Distribución por cuartil")
+quartile_counts = dff["Quartile_std"].fillna("Sin cuartil").value_counts()
+fig_q = px.pie(
+    names=quartile_counts.index,
+    values=quartile_counts.values,
+    hole=0.4,
+    color=quartile_counts.index,
+    color_discrete_map={
+        "Q1": "green", "Q2": "yellow", "Q3": "orange", "Q4": "darkred", "Sin cuartil": "lightgrey"
+    }
+)
+st.plotly_chart(fig_q, use_container_width=True)
 
-# 2. Cuartiles
-with tabs[1]:
-    quartile_counts = df["Quartile_std"].value_counts()
-    fig = px.pie(names=quartile_counts.index, values=quartile_counts.values, hole=0.4,
-                 title="Distribución por cuartiles")
-    st.plotly_chart(fig, use_container_width=True)
+st.subheader("📊 Distribución Open Access")
+oa_counts = dff["Open Access"].fillna("Desconocido").value_counts()
+fig_oa = px.pie(names=oa_counts.index, values=oa_counts.values, hole=0.4)
+st.plotly_chart(fig_oa, use_container_width=True)
 
-# 3. Open Access
-with tabs[2]:
-    oa_counts = df["OpenAccess_flag"].map({True:"OA", False:"No OA"}).value_counts()
-    fig = px.pie(names=oa_counts.index, values=oa_counts.values, title="Open Access")
-    st.plotly_chart(fig, use_container_width=True)
-
-# 4. Departamentos
-with tabs[3]:
-    dept_counts = df["Departamento"].value_counts().nlargest(15)
-    fig = px.bar(x=dept_counts.index, y=dept_counts.values, title="Top departamentos")
-    st.plotly_chart(fig, use_container_width=True)
-
-# 5. Revistas
-with tabs[4]:
-    if "Source title" in df.columns:
-        journal_counts = df["Source title"].value_counts().nlargest(15)
-        fig = px.bar(x=journal_counts.index, y=journal_counts.values, title="Top revistas")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("No se encontró columna 'Source title'")
-
-# 6. Autores
-with tabs[5]:
-    if "Authors" in df.columns:
-        authors_split = df["Authors"].dropna().str.split(", ")
-        authors_flat = [a for sublist in authors_split for a in sublist]
-        authors_series = pd.Series(authors_flat).value_counts().nlargest(15)
-        fig = px.bar(x=authors_series.index, y=authors_series.values, title="Top autores")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("No se encontró columna 'Authors'")
-
-# 7. Wordcloud
-with tabs[6]:
-    if "Title" in df.columns:
-        text = " ".join(df["Title"].dropna())
-        wc = WordCloud(width=800, height=400, background_color="white").generate(text)
-        fig, ax = plt.subplots(figsize=(10,5))
-        ax.imshow(wc, interpolation="bilinear")
-        ax.axis("off")
-        st.pyplot(fig)
-    else:
-        st.warning("No se encontró columna 'Title'")
-        
+st.subheader("🏥 Distribución por departamento")
+dept_counts = dff["Departamento"].fillna("Sin asignar").value_counts().reset_index()
+dept_counts.columns = ["Departamento", "Publicaciones"]
+fig_dept = px.bar(dept_counts, x="Departamento", y="Publicaciones")
+st.plotly_chart(fig_dept, use_container_width=True)
