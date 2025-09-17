@@ -446,7 +446,7 @@ with tabs[5]:
 
 # 7) Wordcloud (opcional)
 with tabs[6]:
-    st.subheader("Nube de palabras (títulos)")
+    st.subheader("Wordcloud (títulos)")
     try:
         from wordcloud import WordCloud
         import matplotlib.pyplot as plt
