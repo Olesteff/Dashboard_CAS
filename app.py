@@ -604,4 +604,3 @@ with tabs[7]:
         st.dataframe(tmp.sort_values("Times Cited", ascending=False).head(20)[cols_show], use_container_width=True, height=520)
     else:
         st.info("No hay columna de citas (‘Times Cited’/‘Cited by’).")
-
