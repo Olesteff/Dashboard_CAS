@@ -1,12 +1,9 @@
 # app.py
-# Dashboard de Producción Científica Clínica Alemana – Universidad del Desarrollo
-
 from __future__ import annotations
 
 import re
 from io import BytesIO
 from pathlib import Path
-from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -14,532 +11,469 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-# =========================================
-# Config general
-# =========================================
+# =========================
+# Config
+# =========================
 st.set_page_config(
-    page_title="Dashboard Producción Científica CAS-UDD",
+    page_title="Dashboard de Producción Científica Clínica Alemana – Universidad del Desarrollo",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-TITLE = "Dashboard de Producción Científica Clínica Alemana – Universidad del Desarrollo"
-DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"  # 1ª hoja
+DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
+DEFAULT_SHEET = None  # usa la 1ª hoja
 
-# Candidatos de columnas
-CAND = {
-    "title": ["Title", "Document Title", "TI"],
-    "year": ["_Year", "Year", "Publication Year", "PY"],
-    "doi": ["DOI", "Doi"],
-    "pmid": ["PMID_norm", "PMID", "PubMed ID"],
-    "eid": ["EID", "Scopus EID"],
-    "journal": ["Journal_norm", "Source Title", "Publication Name", "Journal"],
-    "authors": ["Author Full Names", "Author full names", "Authors"],
-    "oa_flag": ["OpenAccess_flag", "Open Access", "OA", "OA_flag"],
-    "quartile": ["Quartile_std", "Quartile", "JCR Quartile", "SJR Quartile"],
-    "jif": ["JIF", "Journal Impact Factor", "JCR IF", "Impact Factor"],
-    "dept": ["Departamento", "Dept_CAS_list", "Dept_FMUDD_list", "Department"],
-    "clinical": ["ClinicalTrial_flag", "ClinicalTrial", "Ensayo_clínico"],
-    "sponsor": ["Has_Sponsor", "Sponsor_flag", "Sponsor"],
-    "affils": ["Affiliations", "Authors with affiliations", "Author Affiliations"],
-}
-
-def _first(df: pd.DataFrame, names: List[str]) -> Optional[str]:
-    for c in names:
+# =========================
+# Utilidades
+# =========================
+def _first_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    for c in candidates:
         if c in df.columns:
             return c
     return None
 
-def _norm_bool_series(s: pd.Series) -> pd.Series:
-    """Normaliza a boolean: True/False, tolera strings/num/nan."""
-    if s is None:
-        return pd.Series(False, index=pd.RangeIndex(0))
-    x = s.astype(str).str.lower().str.strip()
+def _norm_text(s: object) -> str:
+    if pd.isna(s):
+        return ""
+    return re.sub(r"\s+", " ", str(s)).strip()
+
+def _title_key(s: object) -> str:
+    t = str(s or "").lower()
+    t = re.sub(r"[^a-z0-9 ]", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+def _coerce_bool(sr: pd.Series) -> pd.Series:
+    if sr is None:
+        return pd.Series([False]*0, dtype=bool)
+    x = sr.astype(str).str.lower().str.strip()
     true_vals = {"1","true","t","yes","y","si","sí"}
-    false_vals = {"0","false","f","no","n"}
-    out = pd.Series(index=s.index, dtype=bool)
+    false_vals = {"0","false","f","no","n","nan",""}
+    out = pd.Series(index=sr.index, dtype=bool)
     out.loc[x.isin(true_vals)] = True
     out.loc[x.isin(false_vals)] = False
-    out = out.fillna(False)
-    # si son números (0/1) reconocibles
-    try:
-        out = s.astype(float).fillna(0).astype(int).astype(bool)
-    except Exception:
-        pass
     return out.fillna(False)
 
-def _split_semicolon_series(s: pd.Series) -> pd.Series:
-    return (
-        s.astype(str)
-         .fillna("")
-         .replace({"nan": ""})
-         .str.split(r"\s*;\s*")
-    )
+def _coerce_num(sr: pd.Series) -> pd.Series:
+    try:
+        return pd.to_numeric(sr, errors="coerce")
+    except Exception:
+        return pd.Series([np.nan]*len(sr), index=sr.index)
 
-def _xlsx_bytes(df: pd.DataFrame, sheet: str = "Datos") -> Optional[bytes]:
-    for engine in ("xlsxwriter", "openpyxl"):
-        try:
-            buf = BytesIO()
-            with pd.ExcelWriter(buf, engine=engine) as w:
-                df.to_excel(w, index=False, sheet_name=sheet)
-            buf.seek(0)
-            return buf.getvalue()
-        except Exception:
-            continue
+def _best_col(df: pd.DataFrame, names: List[str]) -> Optional[str]:
+    for n in names:
+        if n in df.columns:
+            return n
     return None
 
-# =========================================
-# Carga base (cache)
-# =========================================
+def _extract_sheet_name(xlsx_path: str) -> Optional[str]:
+    try:
+        xl = pd.ExcelFile(xlsx_path)
+        return xl.sheet_names[0] if xl.sheet_names else None
+    except Exception:
+        return None
+
+# =========================
+# Carga de datos
+# =========================
 @st.cache_data(show_spinner=False)
-def load_data(uploaded: Optional[BytesIO]) -> pd.DataFrame:
-    """Lee XLSX (1ª hoja). Si no suben nada, usa DEFAULT_XLSX."""
+def load_data(uploaded=None) -> pd.DataFrame:
     if uploaded is not None:
-        df = pd.read_excel(uploaded, dtype=str)
-    else:
-        df = pd.read_excel(DEFAULT_XLSX, dtype=str)
-    # limpiar duplicados de nombres
-    df.columns = df.columns.astype(str).str.strip()
-    df = df.loc[:, ~pd.Index(df.columns).duplicated(keep="last")]
-    return df
+        return pd.read_excel(uploaded, sheet_name=0, dtype=str)
+    if Path(DEFAULT_XLSX).exists():
+        sheet = 0 if DEFAULT_SHEET is None else DEFAULT_SHEET
+        return pd.read_excel(DEFAULT_XLSX, sheet_name=sheet, dtype=str)
+    raise FileNotFoundError(
+        f"No se encontró {DEFAULT_XLSX}. Sube un XLSX desde la barra lateral."
+    )
 
-def normalize(df: pd.DataFrame) -> pd.DataFrame:
-    """Normaliza nombres/formatos mínimos que usa el dashboard."""
+# =========================
+# Normalización mínima (no borra columnas)
+# =========================
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+    df.columns = df.columns.astype(str)
+    # Año
+    year_col = _best_col(df, ["_Year", "Year", "Publication Year", "PY"])
+    if year_col:
+        df["_Year"] = pd.to_numeric(df[year_col], errors="coerce").astype("Int64")
+    else:
+        df["_Year"] = pd.NA
 
-    # Year
-    ycol = _first(df, CAND["year"])
-    if ycol and ycol != "_Year":
-        df["_Year"] = pd.to_numeric(df[ycol], errors="coerce").astype("Int64")
-    elif not ycol:
-        df["_Year"] = pd.Series(pd.NA, index=df.index, dtype="Int64")
+    # Título
+    title_col = _best_col(df, ["Title", "Document Title", "TI"])
+    if title_col and "Title" not in df.columns:
+        df["Title"] = df[title_col].astype(str)
 
-    # Title
-    tcol = _first(df, CAND["title"])
-    if tcol and tcol != "Title":
-        df["Title"] = df[tcol]
-
-    # OA flag (boolean)
-    ocol = _first(df, CAND["oa_flag"])
-    if ocol:
-        df["OpenAccess_flag"] = _norm_bool_series(df[ocol])
+    # Open Access flag
+    oa_col = _best_col(df, ["OpenAccess_flag", "Open Access", "OA"])
+    if oa_col:
+        df["OpenAccess_flag"] = _coerce_bool(df[oa_col])
     else:
         df["OpenAccess_flag"] = False
 
-    # Quartile_std
-    qcol = _first(df, CAND["quartile"])
-    if qcol and qcol != "Quartile_std":
-        df["Quartile_std"] = df[qcol]
-    if "Quartile_std" in df.columns:
-        df["Quartile_std"] = (
-            df["Quartile_std"]
-            .fillna("")
-            .replace({"nan": ""})
-            .str.upper()
-            .str.extract(r"(Q[1-4])", expand=False)
-            .fillna("Sin cuartil")
-        )
-    else:
-        df["Quartile_std"] = "Sin cuartil"
-
-    # JIF
-    jcol = _first(df, CAND["jif"])
-    if jcol and jcol != "JIF":
-        df["JIF"] = df[jcol]
-    if "JIF" in df.columns:
-        df["JIF"] = pd.to_numeric(df["JIF"], errors="coerce")
-    else:
-        df["JIF"] = np.nan
-
-    # Departamento
-    dcol = _first(df, CAND["dept"])
-    if dcol and dcol != "Departamento":
-        df["Departamento"] = df[dcol]
-    if "Departamento" not in df.columns:
-        # fallback: intenta detectar desde affiliations de forma muy simple
-        acol = _first(df, CAND["affils"])
-        if acol:
-            def _dept_guess(s: str) -> str:
-                s = str(s).lower()
-                if "neurolog" in s or "psiquiatr" in s:
-                    return "Neurología y Psiquiatría"
-                if "oncolog" in s:
-                    return "Oncología"
-                if "pediatr" in s:
-                    return "Pediatría"
-                if "gineco" in s or "obstetri" in s:
-                    return "Ginecología y Obstetricia"
-                if "dermato" in s:
-                    return "Dermatología"
-                if "traumato" in s or "ortopedia" in s:
-                    return "Traumatología y Ortopedia"
-                if "imagen" in s or "radiolog" in s:
-                    return "Imágenes"
-                if "anatom" in s or "patolog" in s or "banco de sangre" in s or "laboratorio" in s:
-                    return "Laboratorio, Banco de Sangre y Anatomía Patológica"
-                if "clínica alemana" in s:
-                    return "Clínica Alemana (General)"
-                return "Sin asignar"
-            df["Departamento"] = df[acol].map(_dept_guess)
-        else:
-            df["Departamento"] = "Sin asignar"
-
-    # Clinical / Sponsor
-    ccol = _first(df, CAND["clinical"])
-    if ccol and ccol != "ClinicalTrial_flag":
-        df["ClinicalTrial_flag"] = _norm_bool_series(df[ccol])
-    elif "ClinicalTrial_flag" in df.columns:
-        df["ClinicalTrial_flag"] = _norm_bool_series(df["ClinicalTrial_flag"])
+    # Clinical trials
+    ct_col = _best_col(df, ["ClinicalTrial_flag", "Clinical Trial", "Ensayo_clinico"])
+    if ct_col:
+        df["ClinicalTrial_flag"] = _coerce_bool(df[ct_col])
     else:
         df["ClinicalTrial_flag"] = False
 
-    scol = _first(df, CAND["sponsor"])
-    if scol and scol != "Has_Sponsor":
-        df["Has_Sponsor"] = _norm_bool_series(df[scol])
-    elif "Has_Sponsor" in df.columns:
-        df["Has_Sponsor"] = _norm_bool_series(df["Has_Sponsor"])
+    # Sponsor
+    sp_col = _best_col(df, ["Has_Sponsor", "Sponsor_flag", "Sponsor"])
+    if sp_col:
+        df["Has_Sponsor"] = _coerce_bool(df[sp_col])
     else:
         df["Has_Sponsor"] = False
 
-    # Journal
-    jn = _first(df, CAND["journal"])
-    if jn and jn != "Journal_norm":
-        df["Journal_norm"] = df[jn]
+    # JIF (varios nombres posibles)
+    jif_col = _best_col(df, ["JIF","JIF_2023","Impact Factor","JCR_IF","Journal Impact Factor"])
+    if jif_col:
+        df["_JIF_num"] = _coerce_num(df[jif_col]).fillna(0.0)
+    else:
+        df["_JIF_num"] = 0.0
 
-    # Authors
-    an = _first(df, CAND["authors"])
-    if an and an != "Author Full Names":
-        df["Author Full Names"] = df[an]
+    # Cuartil
+    q_col = _best_col(df, ["quartile_std","Quartile","JCR_Quartile","SJR_Quartile","Quartile_JCR"])
+    if q_col:
+        q = df[q_col].astype(str).str.upper().str.strip()
+        q = q.where(q.isin(["Q1","Q2","Q3","Q4"]), "Sin cuartil")
+        df["quartile_std"] = q
+    else:
+        df["quartile_std"] = "Sin cuartil"
+
+    # Departamento
+    if "Departamento" not in df.columns:
+        # intenta de listas separadas por ';' u otros
+        dep_like = [c for c in df.columns if "dept" in c.lower() or "depart" in c.lower()]
+        dep = None
+        for c in dep_like:
+            tmp = df[c].dropna().astype(str)
+            if not tmp.empty:
+                dep = c
+                break
+        if dep:
+            df["Departamento"] = df[dep].astype(str)
+        else:
+            df["Departamento"] = "Sin asignar"
+    else:
+        df["Departamento"] = df["Departamento"].fillna("Sin asignar").astype(str)
+
+    # IDs
+    for name in ["DOI","DOI_norm","PMID","PMID_norm","EID"]:
+        if name not in df.columns:
+            df[name] = pd.NA
+
+    # Título clave
+    if "Title" in df.columns:
+        df["_title_key"] = df["Title"].map(_title_key)
+    else:
+        df["_title_key"] = ""
 
     return df
 
-# =========================================
-# Sidebar: carga + merge + filtros
-# =========================================
-st.sidebar.header("Datos base")
-up = st.sidebar.file_uploader("Sube un XLSX (usa la 1ª hoja)", type=["xlsx"])
-df_raw = load_data(up)
-df = normalize(df_raw)
+# =========================
+# Dedup/MatchKey por capas
+# =========================
+def build_match_key(df: pd.DataFrame) -> pd.Series:
+    # capa 1: DOI
+    if "DOI_norm" in df.columns:
+        doi = df["DOI_norm"].fillna("").astype(str)
+    else:
+        doi = df["DOI"].fillna("").astype(str) if "DOI" in df.columns else pd.Series([""]*len(df))
+    # capa 2: PMID
+    pmid = df["PMID_norm"].fillna("").astype(str) if "PMID_norm" in df.columns else (df["PMID"].fillna("").astype(str) if "PMID" in df.columns else pd.Series([""]*len(df)))
+    # capa 3: EID
+    eid = df["EID"].fillna("").astype(str) if "EID" in df.columns else pd.Series([""]*len(df))
+    # capa 4: TY (titulo normalizado + año)
+    y = df["_Year"].fillna(-1).astype("Int64").astype(str)
+    t = df["_title_key"].fillna("")
+    ty = "TY:" + y + "|" + t
 
-# --- Módulo de actualización/merge ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("Actualizar dataset (merge)")
-new_files = st.sidebar.file_uploader("Nuevos CSV/XLSX", type=["csv", "xlsx"], accept_multiple_files=True)
-colA, colB = st.sidebar.columns(2)
-btn_prev = colA.button("👀 Previsualizar")
-btn_apply = colB.button("✅ Aplicar")
-save_over = st.sidebar.checkbox("Sobrescribir archivo base al aplicar", value=False)
-
-def _read_any(file_obj) -> pd.DataFrame:
-    name = (getattr(file_obj, "name", "") or "").lower()
-    try:
-        if name.endswith(".csv"):
-            return pd.read_csv(file_obj, dtype=str)
-        return pd.read_excel(file_obj, dtype=str)
-    except Exception:
-        return pd.DataFrame()
-
-def _title_key(s: str) -> str:
-    s = str(s or "").lower()
-    s = re.sub(r"[^a-z0-9 ]", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
-
-def _build_key(df_like: pd.DataFrame) -> pd.Series:
-    # key por DOI, PMID, EID, o (Title+Year)
-    parts = []
-    if "DOI" in df_like.columns:
-        parts.append(df_like["DOI"].fillna("").str.lower())
-    if "PMID_norm" in df_like.columns:
-        parts.append("PMID:" + df_like["PMID_norm"].fillna(""))
-    if "EID" in df_like.columns:
-        parts.append("EID:" + df_like["EID"].fillna("").astype(str))
-    ycol = _first(df_like, CAND["year"])
-    tcol = _first(df_like, CAND["title"])
-    if ycol and tcol:
-        y = pd.to_numeric(df_like[ycol], errors="coerce").fillna(-1).astype(int).astype(str)
-        t = df_like[tcol].map(_title_key).fillna("")
-        parts.append("TY:" + y + "|" + t)
-    if not parts:
-        return pd.Series("", index=df_like.index, dtype="object")
-    key = parts[0].astype(str)
-    for p in parts[1:]:
-        key = key.where(key.astype(bool), p.astype(str))
+    key = doi.where(doi != "", "PMID:" + pmid)
+    key = key.where(key != "PMID:", "EID:" + eid)
+    key = key.where(~key.isin(["","PMID:","EID:"]), ty)
     return key
 
-# Vista previa / Aplicar merge
+def merge_preview(old_df: pd.DataFrame, new_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str,int]]:
+    # Construye claves
+    old = old_df.copy()
+    new = new_df.copy()
+    old["_mk"] = build_match_key(old)
+    new["_mk"] = build_match_key(new)
+
+    old_set = set(x for x in old["_mk"] if isinstance(x,str) and x)
+    new["_is_new"] = ~new["_mk"].isin(old_set)
+
+    # cuenta por capas
+    def layer(k: str) -> str:
+        if k.startswith("10."): return "DOI"
+        if k.startswith("PMID:") and len(k)>5: return "PMID"
+        if k.startswith("EID:") and len(k)>4: return "EID"
+        if k.startswith("TY:"): return "TY"
+        return "VACÍO"
+
+    layer_counts = new.loc[~new["_is_new"], "_mk"].map(layer).value_counts().to_dict()
+    return new, layer_counts
+
+def merge_apply(old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
+    a = old_df.copy()
+    b = new_df.copy()
+    a["_mk"] = build_match_key(a)
+    b["_mk"] = build_match_key(b)
+
+    z = pd.concat([a, b], ignore_index=True, sort=False)
+    z["_title_key"] = z["_title_key"].fillna("")
+    z["_dedup"] = z["_mk"].fillna("") + "|" + z["_title_key"]
+    z = z.drop_duplicates(subset="_dedup", keep="first").drop(columns=["_dedup"], errors="ignore")
+    return z
+
+# =========================
+# Sidebar: subida base y merge
+# =========================
+with st.sidebar:
+    st.header("Datos base")
+    up = st.file_uploader("Sube un XLSX", type=["xlsx"])
+    st.caption(f"Por defecto: `{DEFAULT_XLSX}` (primera hoja)")
+
+df_raw = load_data(up)
+df = normalize_columns(df_raw)
+
+# Módulo de merge
+with st.sidebar:
+    st.markdown("---")
+    st.header("Actualizar dataset (merge)")
+    new_files = st.file_uploader("Nuevos CSV/XLSX (se deduplican)", type=["csv","xlsx"], accept_multiple_files=True)
+    btn_prev = st.button("👀 Previsualizar unión")
+    btn_apply = st.button("✅ Aplicar actualización", type="primary")
+    save_over = st.checkbox("Sobrescribir archivo base al aplicar", value=False)
+
 if new_files:
-    news = []
+    new_tables = []
     for f in new_files:
-        t = _read_any(f)
-        if not t.empty:
-            news.append(normalize(t))
-    new_df = pd.concat(news, ignore_index=True, sort=False) if news else pd.DataFrame()
+        try:
+            if f.name.lower().endswith(".csv"):
+                new_tables.append(pd.read_csv(f, dtype=str))
+            else:
+                new_tables.append(pd.read_excel(f, dtype=str))
+        except Exception:
+            pass
+    new_df = pd.concat(new_tables, ignore_index=True, sort=False) if new_tables else pd.DataFrame()
+else:
+    new_df = pd.DataFrame()
 
-    if not new_df.empty:
-        base_keys = _build_key(df)
-        base_set = set([k for k in base_keys if isinstance(k, str) and k])
-        cand_keys = _build_key(new_df)
-        is_new = cand_keys.map(lambda k: (isinstance(k, str) and (k not in base_set) and k != ""))
+if not new_df.empty and btn_prev:
+    prev, lc = merge_preview(df, normalize_columns(new_df))
+    n_new = int(prev["_is_new"].sum())
+    n_dup = int(len(prev) - n_new)
+    st.sidebar.success(f"Vista previa: **{n_new}** nuevos · **{n_dup}** duplicados.")
+    st.sidebar.write("Cruces por capa:", lc)
 
-        if btn_prev:
-            st.sidebar.info(f"Vista previa: {int(is_new.sum())} nuevos · {int(len(new_df)-int(is_new.sum()))} duplicados.")
-            cols = [c for c in ["Title","_Year","DOI","PMID_norm","EID"] if c in new_df.columns]
-            st.sidebar.dataframe(new_df.loc[is_new, cols].head(120), height=300, use_container_width=True)
+if not new_df.empty and btn_apply:
+    merged = merge_apply(df, normalize_columns(new_df))
+    st.sidebar.success(f"Unión aplicada. Registros ahora: {len(merged):,}")
+    if save_over and Path(DEFAULT_XLSX).exists():
+        try:
+            merged.to_excel(DEFAULT_XLSX, index=False)
+            st.sidebar.success(f"Sobrescrito `{DEFAULT_XLSX}`.")
+        except Exception as e:
+            st.sidebar.error(f"No se pudo sobrescribir: {e}")
+    # usa merged en sesión
+    df = merged
 
-        if btn_apply:
-            merged = pd.concat([df, new_df], ignore_index=True, sort=False)
-            merged["_dkey"] = _build_key(merged)
-            before = len(merged)
-            merged = merged.drop_duplicates(subset="_dkey", keep="first").drop(columns=["_dkey"], errors="ignore")
-            st.success(f"Actualizado: +{len(merged)-len(df)} registros nuevos. Total {len(merged):,}")
-            # persistir en sesión y como XLSX
-            st.session_state["__df__"] = merged
-            xbytes = _xlsx_bytes(merged, sheet="Consolidado_enriq")
-            if xbytes:
-                st.sidebar.download_button(
-                    "⬇️ Descargar dataset ACTUALIZADO (XLSX)",
-                    xbytes,
-                    "dataset_actualizado.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_updated"
-                )
-            if save_over and Path(DEFAULT_XLSX).exists():
-                try:
-                    merged.to_excel(DEFAULT_XLSX, index=False)
-                    st.sidebar.success(f"Se sobrescribió {DEFAULT_XLSX}.")
-                except Exception as e:
-                    st.sidebar.error(f"No se pudo sobrescribir: {e}")
-
-# Si ya hay actualizado en sesión, úsalo
-if "__df__" in st.session_state:
-    df = st.session_state["__df__"]
-
-# =========================================
+# =========================
 # Filtros
-# =========================================
-st.sidebar.markdown("---")
-st.sidebar.header("Filtros")
+# =========================
+with st.sidebar:
+    st.header("Filtros")
+    # Años
+    if df["_Year"].notna().any():
+        ys = df["_Year"].dropna().astype(int)
+        lo, hi = int(ys.min()), int(ys.max())
+        y1, y2 = st.slider("Selecciona rango de años", lo, hi, (lo, hi))
+    else:
+        y1, y2 = (0, 9999)
 
-# Rango de años (no parte en 0)
-if "_Year" in df.columns and df["_Year"].notna().any():
-    ys = df["_Year"].dropna().astype(int)
-    y_min, y_max = int(ys.min()), int(ys.max())
-    y1, y2 = st.sidebar.slider("Selecciona rango de años", y_min, y_max, (y_min, y_max))
-else:
-    y1, y2 = (None, None)
+    # OA
+    oa_choice = st.radio("Open Access", ["Todos","Solo Open Access","Solo Closed Access"], index=0)
 
-# Open Access (True/False desde OpenAccess_flag)
-oa_mode = st.sidebar.radio(
-    "Open Access",
-    options=["Todos", "Solo Open Access", "Solo Closed Access"],
-    index=0,
-    horizontal=False
-)
+    # Cuartiles
+    qs = ["Q1","Q2","Q3","Q4","Sin cuartil"]
+    sel_q = st.multiselect("Cuartil JCR/SJR", qs, default=qs)
 
-# Filtro cuartil
-quartile_vals = ["Q1","Q2","Q3","Q4","Sin cuartil"]
-sel_quart = st.sidebar.multiselect("Cuartil JCR/SJR", quartile_vals, default=quartile_vals)
-
-# Departamento
-if "Departamento" in df.columns:
+    # Departamentos
     dep_pool = (
-        df["Departamento"].fillna("")
-          .astype(str)
-          .str.split(r"\s*;\s*").explode().dropna()
+        df["Departamento"]
+        .fillna("Sin asignar")
+        .astype(str)
+        .str.split(r"\s*;\s*")
+        .explode()
+        .dropna()
+        .unique()
+        .tolist()
     )
-    dep_opts = sorted(set([x for x in dep_pool if x != ""]))
-else:
-    dep_opts = []
-sel_dep = st.sidebar.multiselect("Departamento", dep_opts, default=[])
+    dep_pool = sorted([d for d in dep_pool if d])
+    dep_sel = st.multiselect("Departamento", dep_pool, default=[])
 
-# Buscar en título
-query = st.sidebar.text_input("Buscar en título", "")
+    # Búsqueda título
+    qtxt = st.text_input("Buscar en título", "")
 
-# Construir máscara
 mask = pd.Series(True, index=df.index)
-if y1 is not None and y2 is not None:
-    mask &= df["_Year"].astype(float).between(y1, y2)
+
+# años
+mask &= df["_Year"].fillna(-1).astype(int).between(y1, y2)
 
 # OA
-if oa_mode == "Solo Open Access":
-    mask &= df["OpenAccess_flag"].fillna(False)
-elif oa_mode == "Solo Closed Access":
-    mask &= ~df["OpenAccess_flag"].fillna(False)
+if oa_choice == "Solo Open Access":
+    mask &= df["OpenAccess_flag"]
+elif oa_choice == "Solo Closed Access":
+    mask &= ~df["OpenAccess_flag"]
 
-# Cuartil
-if "Quartile_std" in df.columns:
-    mask &= df["Quartile_std"].fillna("Sin cuartil").isin(sel_quart)
+# Cuartiles
+if sel_q:
+    mask &= df["quartile_std"].isin(sel_q)
 
-# Departamento
-if sel_dep and "Departamento" in df.columns:
-    rgx = "|".join(map(re.escape, sel_dep))
-    mask &= df["Departamento"].fillna("").str.contains(rgx)
+# Departamentos
+if dep_sel:
+    patt = "|".join(re.escape(x) for x in dep_sel)
+    mask &= df["Departamento"].fillna("").str.contains(patt)
 
-# Título
-tcol = _first(df, CAND["title"]) or "Title"
-if query and tcol in df.columns:
-    mask &= df[tcol].fillna("").str.contains(query, case=False, na=False)
+# Búsqueda
+if qtxt and "Title" in df.columns:
+    mask &= df["Title"].fillna("").str.contains(qtxt, case=False, na=False)
 
 dff = df.loc[mask].copy()
 
-# =========================================
-# Título + KPIs
-# =========================================
-st.title(TITLE)
+# =========================
+# KPIs
+# =========================
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Total publicaciones", f"{len(dff):,}")
 
-k1, k2, k3, k4 = st.columns(4)
-total = len(dff)
-k1.metric("🧾 Total publicaciones", f"{total:,}")
+pct_oa = (dff["OpenAccess_flag"].mean() * 100) if len(dff) else 0.0
+c2.metric("% Open Access", f"{pct_oa:.1f}%")
 
-# % OA
-pct_oa = (dff["OpenAccess_flag"].sum() / len(dff) * 100) if len(dff) else 0
-k2.metric("🔐 % Open Access", f"{pct_oa:.1f}%")
+sum_jif = float(dff["_JIF_num"].sum()) if "_JIF_num" in dff.columns else 0.0
+c3.metric("⭐ Suma total JIF", f"{sum_jif:,.1f}")
 
-# Suma total JIF (numérico)
-jif_total = pd.to_numeric(dff.get("JIF", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()
-k3.metric("⭐ Suma total JIF", f"{jif_total:,.1f}")
+n_ct = int(dff["ClinicalTrial_flag"].sum()) if "ClinicalTrial_flag" in dff.columns else 0
+c4.metric("🧪 Ensayos clínicos detectados", f"{n_ct:,}")
 
-# Ensayos clínicos y sponsor si existen
-n_trials = int(_norm_bool_series(dff.get("ClinicalTrial_flag", pd.Series(False))).sum())
-n_sponsor = int(_norm_bool_series(dff.get("Has_Sponsor", pd.Series(False))).sum())
-k4.metric("🩺 Ensayos clínicos (flag) / 🏷 Sponsor", f"{n_trials:,} / {n_sponsor:,}")
+n_sp = int(dff["Has_Sponsor"].sum()) if "Has_Sponsor" in dff.columns else 0
+c5.metric("🤝 Publicaciones con sponsor", f"{n_sp:,}")
 
-# =========================================
+# =========================
 # Tabs
-# =========================================
-tabs = st.tabs([
-    "📈 Publicaciones",
-    "📊 Cuartiles",
-    "🔓 Open Access",
-    "🏥 Departamentos",
-    "📚 Revistas",
-    "🧑‍🔬 Autores",
-    "☁️ Nube de palabras",
-    "⭐ JIF",
-])
+# =========================
+tabs = st.tabs(["📈 Publicaciones", "📊 Cuartiles", "🔓 Open Access", "🏥 Departamentos", "📚 Revistas", "👤 Autores", "☁️ Nube de palabras"])
 
-# --- Publicaciones (por año)
+# 1) Publicaciones
 with tabs[0]:
     st.subheader("Publicaciones por año")
-    if "_Year" in dff.columns and dff["_Year"].notna().any():
+    if dff["_Year"].notna().any():
         g = dff["_Year"].dropna().astype(int).value_counts().sort_index()
-        fig = px.bar(x=g.index, y=g.values, labels={"x":"Year","y":"Publicaciones"})
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No hay datos de año.")
-    # Descargas
-    csv_bytes = dff.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ CSV — Resultados filtrados", csv_bytes, "resultados_filtrados.csv", "text/csv", key="dl_pub_csv")
-    xbytes = _xlsx_bytes(dff, "Filtrados")
-    if xbytes:
-        st.download_button("⬇️ XLSX — Resultados filtrados", xbytes,
-                           "resultados_filtrados.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                           key="dl_pub_xlsx")
+        fig = px.bar(x=g.index, y=g.values, labels={"x":"Year","y":"Publicaciones"}, title="Conteo por año")
+        st.plotly_chart(fig, use_container_width=True, key="pubs_year")
+    st.dataframe(dff.head(1000), use_container_width=True, height=420)
+    # descarga
+    xbuf = BytesIO()
+    dff.to_csv(xbuf, index=False)
+    st.download_button("⬇️ CSV filtrado", xbuf.getvalue(), file_name="resultados_filtrados.csv", mime="text/csv")
 
-# --- Cuartiles
+# 2) Cuartiles
 with tabs[1]:
     st.subheader("Distribución por cuartil")
-    q = dff["Quartile_std"].fillna("Sin cuartil")
-    if not q.empty:
-        vc = q.value_counts()
-        fig = px.pie(names=vc.index, values=vc.values, hole=0.5)
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(vc.rename_axis("Cuartil").reset_index(name="Publicaciones"),
-                     use_container_width=True, height=360)
+    cts = dff["quartile_std"].value_counts()
+    if not cts.empty:
+        fig = px.pie(names=cts.index, values=cts.values, hole=0.5, title="Cuartiles")
+        st.plotly_chart(fig, use_container_width=True, key="quart_pie")
+        st.dataframe(cts.rename_axis("Cuartil").reset_index(name="Publicaciones"), use_container_width=True, height=360)
     else:
-        st.info("No hay columna de cuartil.")
+        st.info("Sin datos de cuartil.")
 
-# --- Open Access
+# 3) OA
 with tabs[2]:
-    st.subheader("Distribución Open Access (flag)")
-    if "OpenAccess_flag" in dff.columns:
-        vc = dff["OpenAccess_flag"].map({True:"Open Access", False:"Closed Access"}).value_counts()
-        fig = px.pie(names=vc.index, values=vc.values, hole=0.5)
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(vc.rename_axis("OA").reset_index(name="Publicaciones"),
-                     use_container_width=True, height=320)
+    st.subheader("Distribución Open Access")
+    s = dff["OpenAccess_flag"].map({True:"Open Access", False:"Closed Access"}).value_counts()
+    if not s.empty:
+        fig = px.pie(names=s.index, values=s.values, hole=0.5, title="% OA vs Closed")
+        st.plotly_chart(fig, use_container_width=True, key="oa_pie")
+        st.dataframe(s.rename_axis("Estado").reset_index(name="Publicaciones"), use_container_width=True, height=360)
     else:
         st.info("No hay columna OpenAccess_flag.")
 
-# --- Departamentos
+# 4) Departamentos
 with tabs[3]:
     st.subheader("Distribución por departamento")
-    if "Departamento" in dff.columns and dff["Departamento"].notna().any():
-        top = dff["Departamento"].fillna("Sin asignar").value_counts().head(20)
-        fig = px.bar(top.sort_values(), x=top.sort_values().values, y=top.sort_values().index,
-                     orientation="h", labels={"x":"Publicaciones","y":"Departamento"})
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(top.rename_axis("Departamento").reset_index(name="Publicaciones"),
-                     use_container_width=True, height=360)
+    s = dff["Departamento"].fillna("Sin asignar").astype(str)
+    s = s.str.split(r"\s*;\s*").explode().value_counts()
+    if not s.empty:
+        fig = px.bar(s.sort_values(), orientation="h", title="Top departamentos")
+        st.plotly_chart(fig, use_container_width=True, key="dep_bar")
+        st.dataframe(s.rename_axis("Departamento").reset_index(name="Publicaciones"), use_container_width=True, height=420)
     else:
-        st.info("No hay columna Departamento.")
+        st.info("No hay columna de Departamento.")
 
-# --- Revistas
+# 5) Revistas
 with tabs[4]:
     st.subheader("Top revistas")
-    jn = _first(dff, CAND["journal"]) or "Journal_norm"
-    if jn in dff.columns:
-        top = dff[jn].fillna("—").value_counts().head(20)
-        fig = px.bar(top.sort_values(), x=top.sort_values().values, y=top.sort_values().index,
-                     orientation="h", labels={"x":"Publicaciones","y":"Revista"})
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(top.rename_axis("Revista").reset_index(name="Publicaciones"),
-                     use_container_width=True, height=360)
+    jr_col = _best_col(dff, ["Journal_norm","Journal","Source Title","Publication Name"])
+    if jr_col:
+        s = dff[jr_col].fillna("—").value_counts().head(30)
+        fig = px.bar(s.sort_values(), orientation="h", title="Top revistas (30)")
+        st.plotly_chart(fig, use_container_width=True, key="jr_bar")
+        st.dataframe(s.rename_axis("Revista").reset_index(name="Publicaciones"), use_container_width=True, height=420)
     else:
         st.info("No hay columna de revista.")
 
-# --- Autores
+# 6) Autores
 with tabs[5]:
     st.subheader("Top autores")
-    acol = _first(dff, CAND["authors"]) or "Author Full Names"
-    if acol in dff.columns:
-        s = _split_semicolon_series(dff[acol])
+    a_col = _best_col(dff, ["Author Full Names","Author full names","Authors"])
+    if a_col:
+        s = dff[a_col].dropna().astype(str).str.split(";")
         authors = [a.strip() for sub in s for a in sub if a.strip()]
         if authors:
-            top = pd.Series(authors).value_counts().head(20)
-            fig = px.bar(top.sort_values(), x=top.sort_values().values, y=top.sort_values().index,
-                         orientation="h", labels={"x":"Publicaciones","y":"Autor"})
-            st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(top.rename_axis("Autor").reset_index(name="Publicaciones"),
-                         use_container_width=True, height=360)
+            vc = pd.Series(authors).value_counts().head(30)
+            fig = px.bar(vc.sort_values(), orientation="h", title="Top autores (30)")
+            st.plotly_chart(fig, use_container_width=True, key="auth_bar")
+            st.dataframe(vc.rename_axis("Autor").reset_index(name="Publicaciones"), use_container_width=True, height=420)
         else:
-            st.info("No se pudieron parsear autores.")
+            st.info("No hay autores parseables.")
     else:
         st.info("No hay columna de autores.")
 
-# --- Nube de palabras (títulos)
+# 7) Nube de palabras (opcional si está instalado 'wordcloud')
 with tabs[6]:
     st.subheader("Nube de palabras (títulos)")
     try:
         from wordcloud import WordCloud
-        text = " ".join([str(x) for x in dff.get("Title", pd.Series(dtype=str)).dropna().tolist()])
+        text = " ".join(dff.get("Title", pd.Series(dtype=str)).dropna().astype(str).tolist())
         if text.strip():
             wc = WordCloud(width=1200, height=500, background_color="white").generate(text)
             import matplotlib.pyplot as plt
             fig, ax = plt.subplots(figsize=(10,4))
             ax.imshow(wc, interpolation="bilinear")
             ax.axis("off")
-            st.pyplot(fig, use_container_width=True)
+            st.pyplot(fig, use_container_width=True, clear_figure=True)
         else:
-            st.info("No hay títulos para generar la nube.")
+            st.info("No hay títulos para construir la nube.")
     except Exception:
-        st.info("Para la nube instala `wordcloud` (opcional).")
+        st.info("Instala `wordcloud` para ver esta pestaña:  `pip install wordcloud`")
 
-# --- JIF
-with tabs[7]:
-    st.subheader("Suma de JIF por año")
-    if "JIF" in dff.columns and "_Year" in dff.columns:
-        tmp = dff.copy()
-        tmp["JIF"] = pd.to_numeric(tmp["JIF"], errors="coerce").fillna(0)
-        tmp["_Year"] = pd.to_numeric(tmp["_Year"], errors="coerce")
-        g = tmp.groupby(tmp["_Year"]).agg(JIF_sum=("JIF","sum")).reset_index()
-        g = g.dropna(subset=["_Year"])
-        if not g.empty:
-            fig = px.line(g.sort_values("_Year"), x="_Year", y="JIF_sum", markers=True,
-                          labels={"_Year":"Year", "JIF_sum":"Suma JIF"})
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay valores de JIF para graficar.")
-    else:
-        st.info("No hay columnas JIF/_Year en los datos.")
+# =========================
+# Suma de JIF por año (abajo del todo para evitar IDs duplicados)
+# =========================
+st.markdown("---")
+st.subheader("Suma de JIF por año")
+if "_JIF_num" in dff.columns and dff["_Year"].notna().any():
+    j = (
+        dff.dropna(subset=["_Year"])
+           .assign(_Year=dff["_Year"].astype(int))
+           .groupby("_Year")["_JIF_num"].sum()
+           .sort_index()
+    )
+    fig = px.line(x=j.index, y=j.values, labels={"x":"Year","y":"Suma JIF"})
+    st.plotly_chart(fig, use_container_width=True, key="jif_line")
+else:
+    st.info("No hay datos suficientes para calcular suma de JIF por año.")
