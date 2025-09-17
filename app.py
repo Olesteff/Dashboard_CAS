@@ -244,7 +244,7 @@ tabs = st.tabs([
     "☁️ Wordcloud",
     "📖 Citas",
     "🌍 Colaboración",
-    "🌱 ODS"
+    "🌱 ODS" 
 ])
 
 with tabs[0]:
@@ -442,8 +442,6 @@ with tabs[6]:
     except ImportError:
         st.error("Para usar wordcloud, instala: `pip install wordcloud`")
 
-
-# 👇 OJO: Aquí cierras el bloque anterior y empiezan los nuevos tabs al MISMO NIVEL
 with tabs[7]:
     st.subheader("📖 Citas por año")
     if not total_citas.empty:
@@ -481,7 +479,7 @@ with tabs[8]:
     else:
         st.info("No se encontraron instituciones en las afiliaciones.")
 
-with tabs[10]:
+    with tabs[9]:
     st.subheader("🌱 Publicaciones por ODS")
     if "SDG" in dff.columns:
         sdg = dff["SDG"].dropna().astype(str).str.split(";").explode().str.strip()
