@@ -305,6 +305,30 @@ with tabs[4]:
 
 with tabs[5]:
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
+    
+    # Función para formatear nombres de autores
+    def format_author_name(name):
+        if not isinstance(name, str):
+            return ""
+        # Convertir a formato título (primera letra de cada palabra en mayúscula)
+        formatted = name.title()
+        # Corregir conectores comunes en nombres
+        corrections = {
+            "De ": "de ",
+            "La ": "la ",
+            "El ": "el ",
+            "Y ": "y ",
+            "Del ": "del ",
+            "Los ": "los ",
+            "Las ": "las ",
+            "Mc": "Mc",  # Mantener Mc como McDonald
+            "Mac": "Mac"  # Mantener Mac como MacDonald
+        }
+        for wrong, right in corrections.items():
+            formatted = formatted.replace(wrong, right)
+        return formatted
+    
+    # Procesar autores CAS
     cas_authors = (
         dff["Authors_CAS"].fillna("")
         .astype(str)
@@ -314,33 +338,50 @@ with tabs[5]:
         .replace("", np.nan)
         .dropna()
     )
+    
     if not cas_authors.empty:
-        top_cas = cas_authors.value_counts().head(20).reset_index()
+        # Aplicar formato a los nombres de autores
+        cas_authors_formatted = cas_authors.apply(format_author_name)
+        
+        top_cas = cas_authors_formatted.value_counts().head(20).reset_index()
         top_cas.columns = ["Autor CAS", "Publicaciones"]
+        
+        # Ordenar por número de publicaciones (ascendente para mejor visualización)
+        top_cas_sorted = top_cas.sort_values("Publicaciones", ascending=True)
 
         fig = px.bar(
-            top_cas,
+            top_cas_sorted,
             x="Publicaciones",
             y="Autor CAS",
             orientation="h",
-            title="Top Autores CAS",
+            title="Top 20 Autores CAS",
+            text="Publicaciones"  # Mostrar números en las barras
         )
 
         fig.update_layout(
-            yaxis=dict(categoryorder="total ascending"),
-            margin=dict(l=250),
-            yaxis_tickfont=dict(size=11)
+            yaxis=dict(categoryorder='total ascending'),
+            margin=dict(l=300, r=50, t=80, b=50),  # Más espacio a la izquierda
+            height=600,  # Altura suficiente para mostrar todos los nombres
+            yaxis_tickfont=dict(size=12),
+            title_font=dict(size=16)
         )
 
-        # 👇 Solo mostrar número dentro de la barra
+        # Configurar texto dentro de las barras
         fig.update_traces(
-            text=top_cas["Publicaciones"],
-            textposition="inside",
-            insidetextanchor="start"
+            textposition='inside',
+            insidetextanchor='start',
+            textfont=dict(size=11, color='white'),
+            marker_color='#1f77b4'  # Color azul consistente
         )
 
         st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(top_cas)
+        
+        # Mostrar dataframe con nombres formateados
+        st.dataframe(
+            top_cas.sort_values("Publicaciones", ascending=False)
+            .reset_index(drop=True)
+            .style.format({"Publicaciones": "{:}"})
+        )
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
 
