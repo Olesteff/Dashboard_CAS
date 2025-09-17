@@ -16,3 +16,5 @@ reportlab>=4.2        # para generar PDFs
 
 # --- Utilidades ---
 unidecode>=1.3
+
+# última actualización
