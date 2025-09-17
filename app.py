@@ -104,13 +104,38 @@ dff = df[mask].copy()
 # -----------------------------
 # KPIs
 # -----------------------------
-def kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
-    kpis = {}
+def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
+    kpis: Dict[str, str] = {}
     kpis["Nº publicaciones"] = f"{len(dff):,}"
-    kpis["% OA"] = f"{(dff['Open Access'].eq('OA').mean()*100):.1f}%" if "Open Access" in dff else "—"
-    kpis["Mediana citas"] = f"{pd.to_numeric(dff[_first_col(dff, CAND['cited'])], errors='coerce').median():.0f}" if _first_col(dff, CAND["cited"]) else "—"
-    kpis["Con sponsor"] = f"{int(dff[_first_col(dff, CAND['sponsor'])].sum())}" if _first_col(dff, CAND["sponsor"]) else "—"
-    kpis["Ensayos clínicos"] = f"{int(dff[_first_col(dff, CAND['trial'])].sum())}" if _first_col(dff, CAND["trial"]) else "—"
+
+    # DOI
+    if "DOI_norm" in dff.columns and len(dff):
+        kpis["% con DOI"] = f"{(dff['DOI_norm'].notna().mean() * 100):.1f}%"
+    else:
+        kpis["% con DOI"] = "—"
+
+    # Open Access
+    if "Open Access" in dff.columns and len(dff):
+        kpis["% OA"] = f"{(dff['Open Access'].eq('OA').mean() * 100):.1f}%"
+    else:
+        kpis["% OA"] = "—"
+
+    # Citas
+    if "Times Cited" in dff.columns and len(dff):
+        kpis["Mediana citas"] = f"{pd.to_numeric(dff['Times Cited'], errors='coerce').median():.0f}"
+    else:
+        kpis["Mediana citas"] = "—"
+
+    # Sponsors
+    sponsor_col = _first_col(dff, CAND["sponsor"])
+    if sponsor_col:
+        if dff[sponsor_col].dtype == bool:
+            kpis["Con sponsor"] = f"{int(dff[sponsor_col].sum()):,}"
+        else:
+            kpis["Con sponsor"] = f"{dff[sponsor_col].notna().sum():,}"
+    else:
+        kpis["Con sponsor"] = "—"
+
     return kpis
 
 # -----------------------------
@@ -212,14 +237,16 @@ CAND = {
     "title": ["Title", "Document Title", "TI"],
     "year": ["Year", "Publication Year", "PY", "_Year", "Year_clean"],
     "doi": ["DOI", "Doi"],
-    "journal": ["Journal_norm", "Source title", "Journal"],
-    "dept": ["Departamento"],
+    "link": ["Link", "URL", "Full Text URL"],
+    "journal": ["Journal_norm", "Source title", "Source Title", "Publication Name", "Journal"],
+    "dept": ["Departamento", "Dept_CAS_list", "Dept_FMUDD_list", "Department"],
     "authors": ["Author full names", "Author Full Names", "Authors"],
-    "cited": ["Cited by", "Times Cited"],
+    "cited": ["Cited by", "Times Cited", "TimesCited"],
+    "pmid": ["PubMed ID", "PMID"],
+    "wos": ["Web of Science Record", "Unique WOS ID", "UT (Unique WOS ID)"],
+    "eid": ["EID", "Scopus EID"],
     "oa_flags": ["OpenAccess_flag", "OA_Scopus", "OA_WoS", "OA_PubMed", "OA"],
-    "sponsor": ["Has_Sponsor"],
-    "trial": ["ClinicalTrial_flag"],
-    "quartile": ["JCR_Quartile"]   # 👈 nuevo
+    "sponsor": ["Has_Sponsor", "Funding_info"]  # 👈 nuevo agregado
 }
 
 # --- Sidebar: agregar filtro por cuartil ---
