@@ -180,6 +180,7 @@ def normalize_institution(name: str) -> str:
         "clinica alemana universidadd del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana universidad": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "clinica alemana": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
+        "Clinica Alemana de Santiago": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo", 
         "alemana clinic": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "universidad del desarrollo": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "university of development": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
@@ -187,7 +188,7 @@ def normalize_institution(name: str) -> str:
         "instituto de ciencias e innovacion en medicina": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "centro de genetica y genomica": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "cegen": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
-
+        "Centro De Medicina Regenerativa": "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo",
         "hospital clinico universidad de chile": "Hospital Clínico Universidad de Chile",
         "hospital del salvador": "Hospital del Salvador",
         "clinica las condes": "Clínica Las Condes",
