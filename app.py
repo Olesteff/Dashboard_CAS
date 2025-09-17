@@ -1,5 +1,5 @@
 # ============================================
-# 📊 Dashboard CAS – Producción científica
+# Dashboard CAS – versión completa corregida
 # ============================================
 
 import streamlit as st
@@ -7,105 +7,87 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from typing import Dict
-from pathlib import Path
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
 
-# =========================
-# 📂 Configuración
-# =========================
 st.set_page_config(page_title="Dashboard CAS", layout="wide")
 
-DEFAULT_FILE = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
-
 # =========================
-# 📥 Cargar dataset
+# 📥 Carga de datos
 # =========================
 st.sidebar.header("Datos base")
 
 uploaded_file = st.sidebar.file_uploader("Sube el XLSX (usa la 1ª hoja)", type=["xlsx"])
-if uploaded_file:
+if uploaded_file is not None:
     df = pd.read_excel(uploaded_file, sheet_name=0)
 else:
-    if Path(DEFAULT_FILE).exists():
-        df = pd.read_excel(DEFAULT_FILE, sheet_name=0)
-        st.sidebar.markdown(f"Por defecto: `{DEFAULT_FILE}` (se leerá la 1ª hoja)")
-    else:
-        st.error("No se encontró archivo base ni se subió uno.")
-        st.stop()
+    df = pd.read_excel("dataset_unificado_enriquecido_jcr_PLUS.xlsx", sheet_name=0)
 
-# =========================
-# 🔄 Actualizar dataset (merge)
-# =========================
+# -------------------------
+# Merge con nuevos datasets
+# -------------------------
 st.sidebar.subheader("Actualizar dataset (merge)")
-merge_file = st.sidebar.file_uploader("Nuevos CSV/XLSX", type=["csv", "xlsx"])
-apply_merge = st.sidebar.checkbox("Aplicar actualización")
+new_files = st.sidebar.file_uploader("Nuevos CSV/XLSX", type=["csv", "xlsx"], accept_multiple_files=True)
 
-if merge_file and apply_merge:
-    new_df = pd.read_csv(merge_file) if merge_file.name.endswith(".csv") else pd.read_excel(merge_file)
-    df = pd.concat([df, new_df], ignore_index=True).drop_duplicates()
-    st.sidebar.success("✅ Dataset actualizado")
+if new_files:
+    dfs_new = []
+    for f in new_files:
+        if f.name.endswith(".csv"):
+            dfs_new.append(pd.read_csv(f))
+        else:
+            dfs_new.append(pd.read_excel(f))
+    df_new = pd.concat(dfs_new, ignore_index=True)
+    if st.sidebar.checkbox("Previsualizar unión"):
+        st.write("Preview unión", df_new.head())
+    if st.sidebar.button("Aplicar actualización"):
+        df = pd.concat([df, df_new], ignore_index=True)
+        st.success("Dataset actualizado")
 
 # =========================
-# 🎛 Filtros
+# 🎚️ Filtros
 # =========================
 st.sidebar.header("Filtros")
 
-# Rango de años
+# Años
 if "Year" in df.columns:
     min_year, max_year = int(df["Year"].min()), int(df["Year"].max())
     year_range = st.sidebar.slider("Año", min_year, max_year, (min_year, max_year))
-else:
-    year_range = (1980, 2030)
+    df = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])]
 
 # Fuente
-fuentes = [c for c in ["in_Scopus", "in_WoS", "in_PubMed"] if c in df.columns]
-fuente_sel = st.sidebar.multiselect("Fuente", fuentes, default=fuentes)
+if any(col in df.columns for col in ["in_Scopus", "in_WoS", "in_PubMed"]):
+    fuentes = []
+    for col in ["in_Scopus", "in_WoS", "in_PubMed"]:
+        if col in df.columns:
+            fuentes.append(col)
+    selected_fuentes = st.sidebar.multiselect("Fuente", options=fuentes, default=fuentes)
+    if selected_fuentes:
+        mask = df[selected_fuentes].any(axis=1)
+        df = df[mask]
 
 # Open Access
 if "Open Access" in df.columns:
-    oa_opts = df["Open Access"].dropna().unique().tolist()
-    oa_sel = st.sidebar.multiselect("Open Access", oa_opts, default=oa_opts)
-else:
-    oa_sel = []
+    oa_vals = df["Open Access"].fillna("Desconocido").unique().tolist()
+    selected_oa = st.sidebar.multiselect("Open Access", options=oa_vals, default=oa_vals)
+    df = df[df["Open Access"].isin(selected_oa)]
 
-# Cuartiles
-if "JCR_Quartile" in df.columns:
-    quartiles = df["JCR_Quartile"].dropna().unique().tolist()
-    quartile_sel = st.sidebar.multiselect("Cuartil JCR", quartiles, default=quartiles)
-else:
-    quartile_sel = []
-
-# Buscar título
-title_kw = st.sidebar.text_input("Buscar en título")
+# Buscar en título
+if "Article Title" in df.columns:
+    text_search = st.sidebar.text_input("Buscar en título")
+    if text_search:
+        df = df[df["Article Title"].str.contains(text_search, case=False, na=False)]
 
 # Departamento
 if "Departamento" in df.columns:
-    dept_opts = df["Departamento"].dropna().unique().tolist()
-    dept_sel = st.sidebar.multiselect("Departamento", dept_opts)
-else:
-    dept_sel = []
+    deps = df["Departamento"].dropna().unique().tolist()
+    selected_deps = st.sidebar.multiselect("Departamento", options=deps, default=deps)
+    df = df[df["Departamento"].isin(selected_deps)]
 
-# =========================
-# 🔍 Aplicar filtros
-# =========================
-dff = df.copy()
-
-if "Year" in dff.columns:
-    dff = dff[dff["Year"].between(year_range[0], year_range[1])]
-
-for col in fuente_sel:
-    dff = dff[dff[col] == True]
-
-if oa_sel and "Open Access" in dff.columns:
-    dff = dff[dff["Open Access"].isin(oa_sel)]
-
-if quartile_sel and "JCR_Quartile" in dff.columns:
-    dff = dff[dff["JCR_Quartile"].isin(quartile_sel)]
-
-if title_kw:
-    dff = dff[dff["Article Title"].str.contains(title_kw, case=False, na=False)]
-
-if dept_sel and "Departamento" in dff.columns:
-    dff = dff[dff["Departamento"].isin(dept_sel)]
+# Cuartiles JCR
+if "JCR_Quartile" in df.columns:
+    quartiles = df["JCR_Quartile"].fillna("Sin cuartil").unique().tolist()
+    selected_quartiles = st.sidebar.multiselect("Cuartiles JCR", options=quartiles, default=quartiles)
+    df = df[df["JCR_Quartile"].fillna("Sin cuartil").isin(selected_quartiles)]
 
 # =========================
 # 📊 KPIs
@@ -114,25 +96,26 @@ def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
     kpis: Dict[str, str] = {}
     kpis["Nº publicaciones"] = f"{len(dff):,}"
 
-    # OA
-    if "Open Access" in dff.columns:
+    if "DOI_norm" in dff.columns and len(dff):
+        kpis["% con DOI"] = f"{(dff['DOI_norm'].notna().mean() * 100):.1f}%"
+    else:
+        kpis["% con DOI"] = "—"
+
+    if "Open Access" in dff.columns and len(dff):
         kpis["% OA"] = f"{(dff['Open Access'].eq('OA').mean() * 100):.1f}%"
     else:
         kpis["% OA"] = "—"
 
-    # Citas
-    if "Times Cited" in dff.columns:
+    if "Times Cited" in dff.columns and len(dff):
         kpis["Mediana citas"] = f"{pd.to_numeric(dff['Times Cited'], errors='coerce').median():.0f}"
     else:
         kpis["Mediana citas"] = "—"
 
-    # Sponsors
     if "Has_Sponsor" in dff.columns:
         kpis["Con sponsor"] = f"{int(dff['Has_Sponsor'].sum()):,}"
     else:
         kpis["Con sponsor"] = "0"
 
-    # Ensayos clínicos
     if "ClinicalTrial_flag" in dff.columns:
         kpis["Ensayos clínicos"] = f"{int(dff['ClinicalTrial_flag'].sum()):,}"
     else:
@@ -140,10 +123,8 @@ def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
 
     return kpis
 
-st.markdown("## 📊 Resumen")
-
-KP = _kpis_summary(dff)
 k1, k2, k3, k4, k5 = st.columns(5)
+KP = _kpis_summary(df)
 k1.metric("Nº publicaciones", KP["Nº publicaciones"])
 k2.metric("% OA", KP["% OA"])
 k3.metric("Mediana citas", KP["Mediana citas"])
@@ -151,28 +132,46 @@ k4.metric("Con sponsor", KP["Con sponsor"])
 k5.metric("Ensayos clínicos", KP["Ensayos clínicos"])
 
 # =========================
-# 🥧 Gráfico OA
+# 📈 Gráficos
 # =========================
-if "Open Access" in dff.columns and not dff.empty:
-    fig_oa = px.pie(dff, names="Open Access", title="Proporción OA / No OA", hole=0.4)
-    st.plotly_chart(fig_oa, use_container_width=True, key="oa_pie_resumen")
 
-# =========================
-# 🥧 Gráfico Cuartiles
-# =========================
-if "JCR_Quartile" in dff.columns and not dff.empty:
-    fig_q = px.pie(
-        dff,
-        names="JCR_Quartile",
-        title="Distribución por cuartiles JCR",
+# OA
+if "Open Access" in df.columns:
+    oa_counts = df["Open Access"].fillna("Desconocido").value_counts()
+    fig_oa = px.pie(
+        names=oa_counts.index,
+        values=oa_counts.values,
         hole=0.4,
-        color="JCR_Quartile",
+        title="Proporción OA / No OA"
+    )
+    st.plotly_chart(fig_oa, use_container_width=True, key="oa_chart")
+
+# Cuartiles JCR
+if "JCR_Quartile" in df.columns:
+    quartile_counts = df["JCR_Quartile"].fillna("Sin cuartil").value_counts()
+    fig_q = px.pie(
+        names=quartile_counts.index,
+        values=quartile_counts.values,
+        hole=0.4,
+        color=quartile_counts.index,
         color_discrete_map={
             "Q1": "green",
             "Q2": "yellow",
             "Q3": "orange",
             "Q4": "darkred",
-            "Sin cuartil": "lightgrey",
+            "Sin cuartil": "lightgrey"
         },
+        title="Distribución por cuartiles JCR"
     )
-    st.plotly_chart(fig_q, use_container_width=True, key="quartiles_pie_resumen")
+    st.plotly_chart(fig_q, use_container_width=True, key="quartiles_chart")
+
+# Wordcloud de títulos
+if "Article Title" in df.columns:
+    text = " ".join(df["Article Title"].dropna().astype(str).tolist())
+    if text.strip():
+        wc = WordCloud(width=800, height=400, background_color="white").generate(text)
+        st.subheader("Nube de palabras en títulos")
+        fig_wc, ax = plt.subplots(figsize=(10, 5))
+        ax.imshow(wc, interpolation="bilinear")
+        ax.axis("off")
+        st.pyplot(fig_wc, key="wordcloud_chart")
