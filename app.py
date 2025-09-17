@@ -249,9 +249,57 @@ with tabs[3]:
 
 with tabs[4]:
     st.subheader("📑 Revistas más frecuentes")
-    journals = dff["Journal_norm"].fillna("—").value_counts().head(20).reset_index()
+    
+    # Función para formatear nombres de revistas
+    def format_journal_name(name):
+        if not isinstance(name, str):
+            return "—"
+        # Convertir a formato título (primera letra de cada palabra en mayúscula)
+        formatted = name.title()
+        # Corregir conectores comunes
+        corrections = {
+            "De": "de",
+            "La": "la",
+            "El": "el",
+            "Y": "y",
+            "En": "en",
+            "Del": "del",
+            "Los": "los",
+            "Las": "las"
+        }
+        for wrong, right in corrections.items():
+            formatted = formatted.replace(f" {wrong} ", f" {right} ")
+        return formatted
+    
+    # Aplicar formato a los nombres de revistas
+    dff["Journal_formatted"] = dff["Journal_norm"].apply(format_journal_name)
+    
+    journals = dff["Journal_formatted"].fillna("—").value_counts().head(20).reset_index()
     journals.columns = ["Revista", "Publicaciones"]
-    st.plotly_chart(px.bar(journals.sort_values("Publicaciones"), x="Publicaciones", y="Revista", orientation="h", title="Top 20 Revistas"), use_container_width=True)
+    
+    # Crear gráfico con margen izquierdo suficiente
+    fig = px.bar(journals.sort_values("Publicaciones"), 
+                 x="Publicaciones", 
+                 y="Revista", 
+                 orientation="h", 
+                 title="Top 20 Revistas")
+    
+    # Ajustar layout para que los nombres sean visibles
+    fig.update_layout(
+        yaxis=dict(categoryorder='total ascending'),
+        margin=dict(l=300),  # Margen izquierdo más grande
+        height=600,  # Altura suficiente para mostrar todos los nombres
+        yaxis_tickfont=dict(size=12)  # Tamaño de fuente adecuado
+    )
+    
+    # Mostrar valores dentro de las barras
+    fig.update_traces(
+        text=journals.sort_values("Publicaciones")["Publicaciones"],
+        textposition='inside',
+        insidetextanchor='start'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
     st.dataframe(journals)
 
 
@@ -296,7 +344,6 @@ with tabs[5]:
     else:
         st.info("No se detectaron autores CAS en las afiliaciones.")
 
-    # Eliminé la sección duplicada que mostraba el mismo contenido dos veces
 
 
 with tabs[6]:
