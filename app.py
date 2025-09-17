@@ -417,7 +417,7 @@ with tabs[4]:
     st.dataframe(journals)
 
 
-wwith tabs[5]:
+with tabs[5]:
     st.subheader("🏥 Autores de Clínica Alemana (CAS)")
 
     # Procesar autores CAS
