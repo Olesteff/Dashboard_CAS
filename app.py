@@ -1,4 +1,4 @@
-# app.py
+# app_dashboard.py
 from __future__ import annotations
 
 import re
@@ -410,16 +410,14 @@ with tabs[6]:
     st.subheader("☁️ Wordcloud de títulos")
     try:
         from wordcloud import WordCloud, STOPWORDS
+        import matplotlib.pyplot as plt
         
         custom_stopwords = set(STOPWORDS)
         custom_stopwords.update([
-            # Español
             "el","la","los","las","un","una","unos","unas","de","del","y","en","por","para","con",
-            # Inglés
             "the","a","an","of","for","to","with","on","at","by","from","they","their","this","that","these","those"
         ])
 
-        st.subheader("☁️ Wordcloud de títulos")
         text = " ".join(dff["Title"].dropna().astype(str).tolist())
         if text.strip():
             wc = WordCloud(
@@ -427,8 +425,6 @@ with tabs[6]:
                 background_color="white",
                 stopwords=custom_stopwords
             ).generate(text)
-
-            import matplotlib.pyplot as plt
             fig, ax = plt.subplots(figsize=(10, 4))
             ax.imshow(wc, interpolation="bilinear")
             ax.axis("off")
@@ -438,7 +434,9 @@ with tabs[6]:
     except ImportError:
         st.error("Para usar wordcloud, instala: `pip install wordcloud`")
 
-        with tabs[7]:
+
+# 👇 OJO: Aquí cierras el bloque anterior y empiezan los nuevos tabs al MISMO NIVEL
+with tabs[7]:
     st.subheader("📖 Citas por año")
     if not total_citas.empty:
         citas_year = dff.groupby("Year")[total_citas.name].sum().reset_index()
