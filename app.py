@@ -1,12 +1,12 @@
-# /app/app_modular.py
-# Dashboard Cienciométrico con Tabs + Departamentos + Ensayos clínicos + Sponsors
+# /app/app.py
+# Dashboard Cienciométrico con Tabs + Merge/Dedup + PDF (experimental)
 
 from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ st.set_page_config(
 )
 
 DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"
-DEFAULT_SHEET = "Sheet1"
+DEFAULT_SHEET = None   # ✅ Siempre toma la primera hoja
 
 DOI_REGEX = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.I)
 
@@ -107,11 +107,15 @@ def _plotly_png(fig) -> Optional[bytes]:
 # Carga (cache)
 # -----------------------------
 @st.cache_data(show_spinner=False)
-def load_dataframe(uploaded, sheet_name=DEFAULT_SHEET) -> pd.DataFrame:
+def load_dataframe(uploaded, sheet_name=DEFAULT_SHEET) -> Tuple[pd.DataFrame, str]:
     if uploaded is not None:
-        return pd.read_excel(uploaded, sheet_name=sheet_name, dtype=str)
+        xl = pd.ExcelFile(uploaded)
+        sheet = xl.sheet_names[0] if sheet_name is None else sheet_name
+        return pd.read_excel(xl, sheet_name=sheet, dtype=str), sheet
     if Path(DEFAULT_XLSX).exists():
-        return pd.read_excel(DEFAULT_XLSX, sheet_name=sheet_name, dtype=str)
+        xl = pd.ExcelFile(DEFAULT_XLSX)
+        sheet = xl.sheet_names[0] if sheet_name is None else sheet_name
+        return pd.read_excel(xl, sheet_name=sheet, dtype=str), sheet
     raise FileNotFoundError(f"No se encontró {DEFAULT_XLSX}. Sube el XLSX desde la barra lateral.")
 
 # -----------------------------
@@ -152,149 +156,40 @@ def normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
     if ccol and ccol != "Times Cited":
         df["Times Cited"] = pd.to_numeric(df[ccol], errors="coerce")
 
+    pmid_col = _first_col(df, CAND["pmid"])
+    if pmid_col and "PMID_norm" not in df.columns:
+        df["PMID_norm"] = df[pmid_col].astype(str).str.replace(r"\D+", "", regex=True).replace("", np.nan)
+
+    eid_col = _first_col(df, CAND["eid"])
+    if eid_col and "EID" not in df.columns:
+        df["EID"] = df[eid_col].astype(str)
+
+    df["in_PubMed"] = df[pmid_col].notna() if pmid_col else False
+    df["in_WoS"] = df[_first_col(df, CAND["wos"])].notna() if _first_col(df, CAND["wos"]) else False
+    df["in_Scopus"] = False
+    if "Times Cited" in df.columns:
+        df["in_Scopus"] = df["Times Cited"].notna()
+    if "OA_Scopus" in df.columns:
+        df["in_Scopus"] = df["in_Scopus"] | df["OA_Scopus"].notna()
+
+    oa_cols = [c for c in CAND["oa_flags"] if c in df.columns]
+    if oa_cols:
+        oa_any = pd.concat([_bool_from_str_series(df[c]) for c in oa_cols], axis=1).any(axis=1)
+        df["Open Access"] = oa_any.map({True: "OA", False: "No OA"})
+    else:
+        df["Open Access"] = "Desconocido"
+
     return df
 
 # -----------------------------
-# Sidebar – carga y filtros
+# Carga dataset
 # -----------------------------
-with st.sidebar:
-    st.subheader("Datos base")
-    up = st.file_uploader("Sube el XLSX (Sheet1)", type=["xlsx"])
-    st.caption(f"Por defecto: `{DEFAULT_XLSX}` / hoja `{DEFAULT_SHEET}`")
-    st.markdown("---")
-    st.subheader("Filtros")
-
-# Carga inicial
 try:
-    base_df = load_dataframe(up)
+    base_df, loaded_sheet = load_dataframe(None)
+    st.sidebar.success(f"📑 Hoja detectada: {loaded_sheet}")
 except Exception as e:
     st.error(str(e))
     st.stop()
 
 df = normalize_dataset(base_df)
-
-mask = pd.Series(True, index=df.index)
-
-with st.sidebar:
-    if "_Year" in df.columns and df["_Year"].notna().any():
-        ys = df["_Year"].dropna().astype(int)
-        y_min, y_max = int(ys.min()), int(ys.max())
-        y1, y2 = st.slider("Año", y_min, y_max, (y_min, y_max))
-        mask &= df["_Year"].astype(float).between(y1, y2)
-
-    if "Open Access" in df.columns:
-        oa_vals = ["OA", "No OA", "Desconocido"]
-        sel_oa = st.multiselect("Open Access", oa_vals, default=oa_vals)
-        mask &= df["Open Access"].isin(sel_oa)
-
-    if "Departamento" in df.columns and df["Departamento"].notna().any():
-        dep_pool = df["Departamento"].dropna().astype(str).str.split(r"\s*;\s*").explode().dropna()
-        dep_pool = sorted(set([d for d in dep_pool if d]))
-        sel_dep = st.multiselect("Departamento", dep_pool, default=[])
-        if sel_dep:
-            rgx = "|".join(map(re.escape, sel_dep))
-            mask &= df["Departamento"].fillna("").str.contains(rgx)
-
-dff = df[mask].copy()
-dff = dff.loc[:, ~pd.Index(dff.columns).duplicated(keep="last")]
-
-st.subheader(f"Resultados: {len(dff):,}")
-
-# -----------------------------
-# KPIs + figuras
-# -----------------------------
-def _kpis_summary(dff: pd.DataFrame) -> Dict[str, str]:
-    kpis: Dict[str, str] = {}
-    kpis["Nº publicaciones"] = f"{len(dff):,}"
-    if "Open Access" in dff.columns and len(dff):
-        kpis["% OA"] = f"{(dff['Open Access'].eq('OA').mean() * 100):.1f}%"
-    else:
-        kpis["% OA"] = "—"
-    if "Times Cited" in dff.columns and len(dff):
-        kpis["Mediana citas"] = f"{pd.to_numeric(dff['Times Cited'], errors='coerce').median():.0f}"
-    else:
-        kpis["Mediana citas"] = "—"
-    return kpis
-
-# -----------------------------
-# Tabs
-# -----------------------------
-tabs = st.tabs([
-    "📌 Resumen", "📄 Datos", "📚 Revistas", "🧑‍🔬 Autores",
-    "🟢 OA", "⭐ Citas", "🏥 Departamentos", "🧪 Ensayos clínicos", "💰 Sponsors"
-])
-
-# RESUMEN
-with tabs[0]:
-    KP = _kpis_summary(dff)
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Nº publicaciones", KP["Nº publicaciones"])
-    k2.metric("% OA", KP["% OA"])
-    k3.metric("Mediana citas", KP["Mediana citas"])
-
-# DATOS
-with tabs[1]:
-    st.subheader("Resultados filtrados")
-    st.dataframe(dff.head(1000), use_container_width=True, height=420)
-    csv_bytes = dff.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ CSV — Resultados", csv_bytes, "resultados_filtrados.csv", "text/csv")
-    xlsx_bytes = _df_to_xlsx_bytes(dff)
-    if xlsx_bytes:
-        st.download_button("⬇️ XLSX — Resultados", xlsx_bytes, "resultados_filtrados.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# REVISTAS
-with tabs[2]:
-    if "Journal_norm" in dff.columns:
-        top_jr = dff["Journal_norm"].fillna("—").value_counts().head(15).rename_axis("Journal").reset_index(name="N")
-        fig = px.bar(top_jr.sort_values("N"), x="N", y="Journal", orientation="h", title="Top 15 revistas")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(top_jr)
-
-# AUTORES
-with tabs[3]:
-    if "Author Full Names" in dff.columns:
-        s = dff["Author Full Names"].dropna().astype(str).str.split(";")
-        authors = [a.strip() for sub in s for a in sub if a.strip()]
-        top_auth = pd.Series(authors).value_counts().head(15).rename_axis("Autor").reset_index(name="N")
-        fig = px.bar(top_auth.sort_values("N"), x="N", y="Autor", orientation="h", title="Top 15 autores")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(top_auth)
-
-# OA
-with tabs[4]:
-    if "Open Access" in dff.columns:
-        oa_counts = dff["Open Access"].value_counts()
-        fig = px.pie(names=oa_counts.index, values=oa_counts.values, title="Distribución Open Access")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(dff[["_Year", "Title", "Open Access"]])
-
-# CITAS
-with tabs[5]:
-    if "Times Cited" in dff.columns:
-        tmp = dff.copy()
-        tmp["Times Cited"] = pd.to_numeric(tmp["Times Cited"], errors="coerce")
-        top_cited = tmp.sort_values("Times Cited", ascending=False).head(20)
-        st.dataframe(top_cited[["Title","Author Full Names","Times Cited","_Year"]])
-
-# DEPARTAMENTOS
-with tabs[6]:
-    if "Departamento" in dff.columns:
-        top_dep = dff["Departamento"].fillna("—").value_counts().head(15).rename_axis("Departamento").reset_index(name="N")
-        fig = px.bar(top_dep.sort_values("N"), x="N", y="Departamento", orientation="h", title="Top 15 departamentos")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(top_dep)
-
-# ENSAYOS CLÍNICOS
-with tabs[7]:
-    if "ClinicalTrial_flag" in dff.columns:
-        trials = dff[dff["ClinicalTrial_flag"] == True]
-        st.metric("Nº Ensayos clínicos", len(trials))
-        st.dataframe(trials[["Title","_Year","Journal_norm","Departamento"]].head(50))
-
-# SPONSORS
-with tabs[8]:
-    if "Has_Sponsor" in dff.columns:
-        sponsor_df = dff[dff["Has_Sponsor"] == True]
-        st.metric("Nº publicaciones con sponsor", len(sponsor_df))
-        st.dataframe(sponsor_df[["Title","_Year","Journal_norm","Departamento","Funding_info"]].head(50))
+st.success(f"Dataset cargado con {len(df):,} filas ✅")
