@@ -1,306 +1,228 @@
-# app_final.py
-from __future__ import annotations
-
-import re
-from io import BytesIO
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
-import numpy as np
-import pandas as pd
-import plotly.express as px
 import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+import re
 
-# =========================
-# Config
-# =========================
 st.set_page_config(
-    page_title="Dashboard de Producción Científica Clínica Alemana – Universidad del Desarrollo",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="Dashboard de Producción Científica",
+    layout="wide"
 )
 
-DEFAULT_XLSX = "dataset_unificado_enriquecido_jcr_PLUS.xlsx"  # 1ª hoja (por defecto)
-DEFAULT_SHEET_INDEX = 0  # usa la primera hoja
+st.title("📊 Dashboard de Producción Científica – Clínica Alemana – Universidad del Desarrollo")
 
 # =========================
-# Utils base
+# FUNCIONES DE APOYO
 # =========================
-def _first_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
 
-def _coerce_bool(sr: pd.Series | None) -> pd.Series:
-    if sr is None:
-        return pd.Series([False]*0, dtype=bool)
-    x = sr.astype(str).str.lower().str.strip()
-    true_vals = {"1","true","t","yes","y","si","sí"}
-    out = pd.Series(False, index=sr.index)
-    out.loc[x.isin(true_vals)] = True
-    return out.fillna(False)
+def detect_department(affiliation: str) -> str:
+    """Detecta departamento desde texto de afiliaciones."""
+    if not isinstance(affiliation, str):
+        return "Sin asignar"
+    aff = affiliation.lower()
+    if "neurolog" in aff or "psiquiatr" in aff:
+        return "Neurología y Psiquiatría"
+    if "oncolog" in aff:
+        return "Oncología"
+    if "pediatr" in aff:
+        return "Pediatría"
+    if "ginecol" in aff or "obstetr" in aff:
+        return "Ginecología y Obstetricia"
+    if "medicina interna" in aff:
+        return "Medicina Interna"
+    if "trauma" in aff or "ortoped" in aff:
+        return "Traumatología y Ortopedia"
+    if "enfermer" in aff:
+        return "Enfermería"
+    if "imagen" in aff or "radiolog" in aff:
+        return "Imágenes"
+    if "urgenc" in aff:
+        return "Urgencias"
+    if "cirug" in aff:
+        return "Cirugía"
+    return "Clínica Alemana"
 
-def _coerce_num(sr: pd.Series | None) -> pd.Series:
-    if sr is None:
-        return pd.Series(dtype=float)
-    try:
-        return pd.to_numeric(sr, errors="coerce")
-    except Exception:
-        return pd.Series([np.nan]*len(sr), index=sr.index)
-
-def _title_key(s: object) -> str:
-    t = str(s or "").lower()
-    t = re.sub(r"[^a-z0-9 ]", " ", t)
-    return re.sub(r"\s+", " ", t).strip()
-
-def _df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Datos") -> Optional[bytes]:
-    for engine in ("xlsxwriter","openpyxl"):
-        try:
-            buf = BytesIO()
-            with pd.ExcelWriter(buf, engine=engine) as w:
-                df.to_excel(w, index=False, sheet_name=sheet_name)
-            buf.seek(0)
-            return buf.getvalue()
-        except Exception:
-            continue
-    return None
-
-# =========================
-# Carga
-# =========================
-@st.cache_data(show_spinner=False)
-def load_data(uploaded=None) -> pd.DataFrame:
-    if uploaded is not None:
-        return pd.read_excel(uploaded, sheet_name=DEFAULT_SHEET_INDEX, dtype=str)
-    if Path(DEFAULT_XLSX).exists():
-        return pd.read_excel(DEFAULT_XLSX, sheet_name=DEFAULT_SHEET_INDEX, dtype=str)
-    raise FileNotFoundError(
-        f"No se encontró {DEFAULT_XLSX}. Sube un XLSX desde la barra lateral."
-    )
-
-# =========================
-# Normalización
-# =========================
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = df.columns.astype(str)
-
-    # Año
-    year_col = _first_col(df, ["Year", "Publication Year", "PY"])
-    if year_col:
-        df["_Year"] = pd.to_numeric(df[year_col], errors="coerce").astype("Int64")
-    else:
-        df["_Year"] = pd.NA
-
-    # Título
-    title_col = _first_col(df, ["Title", "Document Title", "Article Title", "TI"])
-    if title_col and "Title" not in df.columns:
-        df["Title"] = df[title_col].astype(str)
-    df["_title_key"] = df.get("Title", pd.Series("", index=df.index)).map(_title_key)
-
-    # Open Access
-    oa_col = _first_col(df, ["OpenAccess_flag", "Open Access", "OA"])
-    df["OpenAccess_flag"] = _coerce_bool(df[oa_col]) if oa_col else False
-
-    # Clinical trials (detección textual robusta)
-    title = df.get("Title", pd.Series("", index=df.index)).astype(str)
-    abstract = df.get("Abstract", pd.Series("", index=df.index)).astype(str)
-    ptype = df.get("Publication Type", pd.Series("", index=df.index)).astype(str)
-    keywords = df.get("Keywords", pd.Series("", index=df.index)).astype(str)
-
-    text = (title + " " + abstract + " " + ptype + " " + keywords).str.lower()
+def detect_clinical_trial(row) -> bool:
+    """Detecta ensayos clínicos desde columnas de título, resumen, tipo de publicación y keywords."""
+    text = ""
+    for col in ["Title", "Abstract", "Publication Type", "Keywords"]:
+        if col in row and pd.notna(row[col]):
+            text += " " + str(row[col])
+    text = text.lower()
     ct_regex = r"(ensayo\s*cl[ií]nico|clinical\s*trial|randomi[sz]ed|phase\s*[i1v]+|double\s*blind|placebo\-controlled)"
-    df["ClinicalTrial_flag"] = text.str.contains(ct_regex, regex=True, na=False)
+    return bool(re.search(ct_regex, text))
 
-    # Sponsor (detectado pero no mostrado en pestañas)
-    fund_cols = [c for c in df.columns if re.search(r"(fund|grant|sponsor|financ)", c, flags=re.I)]
-    if fund_cols:
-        fund_text = df[fund_cols].astype(str).agg(" ".join, axis=1)
-        df["Has_Sponsor"] = fund_text.astype(str).str.strip().ne("")
-    else:
-        df["Has_Sponsor"] = False
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza columnas críticas para el dashboard."""
+    # Año
+    year_cols = ["Year", "Año", "Publication Year", "Year_Published"]
+    for col in year_cols:
+        if col in df.columns:
+            df = df.rename(columns={col: "Year"})
+            df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+            break
+
+    # OpenAccess
+    if "OpenAccess_flag" in df.columns:
+        df["OpenAccess_flag"] = (
+            df["OpenAccess_flag"].astype(str).str.lower().map({"true": True, "false": False})
+        )
 
     # JIF
-    jif_col = _first_col(df, ["Journal Impact Factor","JIF","Impact Factor"])
-    df["_JIF_num"] = _coerce_num(df[jif_col]).fillna(0.0) if jif_col else 0.0
+    jif_cols = ["Journal Impact Factor", "Impact Factor", "JIF"]
+    for col in jif_cols:
+        if col in df.columns:
+            df = df.rename(columns={col: "Journal Impact Factor"})
+            df["Journal Impact Factor"] = pd.to_numeric(df["Journal Impact Factor"], errors="coerce").fillna(0)
+            break
+    if "Journal Impact Factor" not in df.columns:
+        df["Journal Impact Factor"] = 0
 
-    # Cuartiles
-    q_col = _first_col(df, ["JCR Quartile", "JCR_Quartile","Quartile"])
-    if q_col:
-        q = df[q_col].astype(str).str.upper().str.extract(r"(Q[1-4])", expand=False)
-        df["quartile_std"] = q.fillna("Sin cuartil")
-    else:
-        df["quartile_std"] = "Sin cuartil"
+    # Quartiles
+    quart_cols = ["JCR Quartile", "JCR_Quartile", "Quartile_std", "Quartile"]
+    for col in quart_cols:
+        if col in df.columns:
+            df = df.rename(columns={col: "Quartile"})
+            df["Quartile"] = df["Quartile"].fillna("Sin cuartil")
+            break
+    if "Quartile" not in df.columns:
+        df["Quartile"] = "Sin cuartil"
 
     # Departamentos
-    aff_col = _first_col(df, ["Authors with affiliations","Author Affiliations","Affiliations","C1","Author Information"])
-    def detect_department(aff: str) -> str:
-        a = str(aff or "").lower()
-        rules = [
-            ("oncolog", "Oncología"),
-            ("pediatr", "Pediatría"),
-            ("neurolog", "Neurología y Psiquiatría"),
-            ("psiquiatr", "Neurología y Psiquiatría"),
-            ("radiolog", "Imágenes"),
-            ("imagen", "Imágenes"),
-            ("ginecol", "Ginecología y Obstetricia"),
-            ("obstet", "Ginecología y Obstetricia"),
-            ("traumatolog", "Traumatología y Ortopedia"),
-            ("ortoped", "Traumatología y Ortopedia"),
-            ("dermatolog", "Dermatología"),
-            ("medicina interna", "Medicina Interna"),
-            ("internal medicine", "Medicina Interna"),
-            ("urgenc", "Urgencias"),
-            ("intensiv", "Cuidados Intensivos"),
-            ("anestesi", "Anestesiología"),
-            ("cardiol", "Cardiología"),
-            ("endocrin", "Endocrinología"),
-            ("nefrol", "Nefrología"),
-            ("neumol", "Neumología"),
-            ("rehabilit", "Rehabilitación"),
-            ("odont", "Odontología"),
-            ("alemana", "Clínica Alemana (General)"),
-            ("udd", "Clínica Alemana (General)"),
-        ]
-        for kw, dep in rules:
-            if kw in a:
-                return dep
-        return "Sin asignar"
+    aff_col = None
+    for c in ["Authors with affiliations", "Affiliations", "Author Affiliations"]:
+        if c in df.columns:
+            aff_col = c
+            break
+    if aff_col:
+        df["Departamento"] = df[aff_col].apply(detect_department)
+    else:
+        df["Departamento"] = "Sin asignar"
 
-    df["Departamento"] = df.get(aff_col, pd.Series("", index=df.index)).map(detect_department)
+    # Ensayos clínicos
+    df["ClinicalTrial_flag"] = df.apply(detect_clinical_trial, axis=1)
 
     return df
 
 # =========================
-# Carga dataset
+# CARGA DE DATOS
 # =========================
-df_base = load_data()
-df = normalize_columns(df_base)
+
+@st.cache_data
+def load_data():
+    df = pd.read_excel("dataset_unificado_enriquecido_jcr_PLUS.xlsx", sheet_name=0)
+    df = normalize_columns(df)
+    return df
+
+df = load_data()
 
 # =========================
-# Sidebar – Filtros
+# FILTROS
 # =========================
-st.sidebar.header("Filtros")
 
-# Año
-if df["_Year"].notna().any():
-    ys = df["_Year"].dropna().astype(int)
-    lo, hi = int(ys.min()), int(ys.max())
-    y1, y2 = st.sidebar.slider("Rango de años", lo, hi, (lo, hi))
-else:
-    y1, y2 = (0, 9999)
+st.sidebar.header("🔎 Filtros")
 
-# OA
-oa_choice = st.sidebar.radio("Open Access", ["Todos","Solo OA","Solo No OA"], index=0)
+year_min, year_max = int(df["Year"].min()), int(df["Year"].max())
+year_range = st.sidebar.slider("Años", year_min, year_max, (year_min, year_max))
 
-# Cuartil
-qs = ["Q1","Q2","Q3","Q4","Sin cuartil"]
-sel_q = st.sidebar.multiselect("Cuartil", qs, default=qs)
-
-# Departamento
-deps = sorted(df["Departamento"].dropna().unique())
-sel_dep = st.sidebar.multiselect("Departamento", deps, default=[])
-
-# Búsqueda
-qtxt = st.sidebar.text_input("Buscar en título", "")
+oa_filter = st.sidebar.radio("Open Access", ["Todos", "Solo OA", "No OA"])
+quart_filter = st.sidebar.multiselect("Cuartiles", df["Quartile"].unique(), default=df["Quartile"].unique())
+dept_filter = st.sidebar.multiselect("Departamentos", df["Departamento"].unique(), default=df["Departamento"].unique())
+search_term = st.sidebar.text_input("Buscar en títulos")
 
 # Aplicar filtros
-mask = pd.Series(True, index=df.index)
-mask &= df["_Year"].fillna(-1).astype(int).between(y1, y2)
-if oa_choice == "Solo OA":
-    mask &= df["OpenAccess_flag"]
-elif oa_choice == "Solo No OA":
-    mask &= ~df["OpenAccess_flag"]
-if sel_q:
-    mask &= df["quartile_std"].isin(sel_q)
-if sel_dep:
-    dep_series = df["Departamento"].fillna("").astype(str)
-    dep_mask = pd.Series(False, index=df.index)
-    for dep in sel_dep:
-        dep_mask |= dep_series.str.contains(dep, case=False, regex=False)
-    mask &= dep_mask
-if qtxt.strip():
-    mask &= df["Title"].fillna("").str.contains(qtxt, case=False, na=False)
+dff = df[(df["Year"].between(year_range[0], year_range[1])) &
+         (df["Quartile"].isin(quart_filter)) &
+         (df["Departamento"].isin(dept_filter))]
 
-dff = df.loc[mask].copy()
+if oa_filter == "Solo OA":
+    dff = dff[dff["OpenAccess_flag"] == True]
+elif oa_filter == "No OA":
+    dff = dff[dff["OpenAccess_flag"] == False]
+
+if search_term:
+    dff = dff[dff["Title"].astype(str).str.contains(search_term, case=False, na=False)]
 
 # =========================
 # KPIs
 # =========================
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Publicaciones", f"{len(dff):,}")
-c2.metric("% OA", f"{100*dff['OpenAccess_flag'].mean():.1f}%" if len(dff) else "0%")
-c3.metric("⭐ Suma JIF", f"{dff['_JIF_num'].sum():,.1f}")
-c4.metric("🧪 Ensayos clínicos", f"{int(dff['ClinicalTrial_flag'].sum()):,}")
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("📚 Publicaciones", len(dff))
+col2.metric("🔓 % Open Access", f"{100 * dff['OpenAccess_flag'].mean():.1f}%")
+col3.metric("📈 Suma JIF", f"{dff['Journal Impact Factor'].sum():.1f}")
+col4.metric("🧪 Ensayos clínicos", int(dff["ClinicalTrial_flag"].sum()))
 
 # =========================
-# Tabs
+# PESTAÑAS
 # =========================
-tabs = st.tabs([
-    "📈 Publicaciones", "📊 Cuartiles", "🔓 Open Access", "🏥 Departamentos",
-    "📚 Revistas", "👤 Autores", "☁️ Wordcloud"
-])
 
-# 1) Publicaciones
+tabs = st.tabs(["📅 Publicaciones", "📊 Cuartiles", "🔓 Open Access", "🏥 Departamentos", "📑 Revistas", "👥 Autores", "☁️ Wordcloud"])
+
 with tabs[0]:
-    st.subheader("Publicaciones por año")
-    if dff["_Year"].notna().any():
-        g = dff["_Year"].dropna().astype(int).value_counts().sort_index()
-        fig = px.bar(x=g.index, y=g.values, labels={"x":"Año","y":"Publicaciones"})
-        st.plotly_chart(fig, use_container_width=True)
+    st.subheader("📅 Publicaciones por año")
+    pub_year = dff.groupby("Year").size().reset_index(name="Publicaciones")
+    st.plotly_chart(px.bar(pub_year, x="Year", y="Publicaciones", title="Publicaciones por Año"), use_container_width=True)
 
-# 2) Cuartiles
+    st.subheader("📈 Evolución JIF por año")
+    jif_year = dff.groupby("Year")["Journal Impact Factor"].sum().reset_index()
+    st.plotly_chart(px.line(jif_year, x="Year", y="Journal Impact Factor", markers=True, title="Suma JIF por Año"), use_container_width=True)
+
 with tabs[1]:
-    st.subheader("Distribución por cuartil")
-    cts = dff["quartile_std"].value_counts()
-    fig = px.pie(names=cts.index, values=cts.values, hole=0.5)
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("📊 Distribución por cuartiles")
+    quart_count = dff["Quartile"].value_counts().reset_index()
+    quart_count.columns = ["Quartile", "Publicaciones"]
+    st.plotly_chart(px.pie(quart_count, names="Quartile", values="Publicaciones", hole=0.4,
+                           title="Distribución de publicaciones por cuartil"), use_container_width=True)
 
-# 3) OA
 with tabs[2]:
-    st.subheader("Distribución Open Access")
-    s = dff["OpenAccess_flag"].map({True:"OA", False:"No OA"}).value_counts()
-    fig = px.pie(names=s.index, values=s.values, hole=0.5)
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("🔓 Publicaciones Open Access")
+    oa_count = dff["OpenAccess_flag"].value_counts().reset_index()
+    oa_count.columns = ["OpenAccess", "Publicaciones"]
+    st.plotly_chart(px.pie(oa_count, names="OpenAccess", values="Publicaciones", hole=0.4,
+                           title="Distribución Open Access"), use_container_width=True)
 
-# 4) Departamentos
 with tabs[3]:
-    st.subheader("Distribución por departamento")
-    s = dff["Departamento"].value_counts()
-    fig = px.bar(s.sort_values(), orientation="h")
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("🏥 Publicaciones por Departamento")
+    dept_count = dff["Departamento"].value_counts().reset_index()
+    dept_count.columns = ["Departamento", "Publicaciones"]
+    st.plotly_chart(px.bar(dept_count, x="Departamento", y="Publicaciones", title="Publicaciones por Departamento"), use_container_width=True)
 
-# 5) Revistas
 with tabs[4]:
-    jr_col = _first_col(dff, ["Journal","Source Title","Publication Name"])
-    if jr_col:
-        s = dff[jr_col].fillna("—").value_counts().head(20)
-        fig = px.bar(s.sort_values(), orientation="h")
-        st.plotly_chart(fig, use_container_width=True)
+    st.subheader("📑 Revistas más frecuentes")
+    if "Source title" in dff.columns:
+        journal_count = dff["Source title"].value_counts().head(20).reset_index()
+        journal_count.columns = ["Revista", "Publicaciones"]
+        st.dataframe(journal_count)
 
-# 6) Autores
 with tabs[5]:
-    a_col = _first_col(dff, ["Author Full Names","Authors"])
-    if a_col:
-        s = dff[a_col].dropna().astype(str).str.split(";")
-        authors = [a.strip() for sub in s for a in sub if a.strip()]
-        vc = pd.Series(authors).value_counts().head(20)
-        fig = px.bar(vc.sort_values(), orientation="h")
-        st.plotly_chart(fig, use_container_width=True)
+    st.subheader("👥 Autores más frecuentes")
+    authors_col = None
+    for c in ["Author Full Names", "Authors", "Authors with affiliations"]:
+        if c in dff.columns:
+            authors_col = c
+            break
+    if authors_col:
+        authors = dff[authors_col].dropna().str.split(";|,|\\|").explode().str.strip()
+        top_authors = authors.value_counts().head(20).reset_index()
+        top_authors.columns = ["Autor", "Publicaciones"]
+        st.dataframe(top_authors)
+    else:
+        st.warning("No hay autores parseables")
 
-# 7) Wordcloud
 with tabs[6]:
-    st.subheader("Wordcloud")
-    try:
-        from wordcloud import WordCloud
-        import matplotlib.pyplot as plt
-        text = " ".join(dff.get("Title", pd.Series(dtype=str)).dropna().astype(str).tolist())
+    st.subheader("☁️ Wordcloud de títulos")
+    if "Title" in dff and not dff["Title"].dropna().empty:
+        text = " ".join(dff["Title"].dropna().tolist())
         if text.strip():
-            wc = WordCloud(width=1000, height=400, background_color="white").generate(text)
-            fig, ax = plt.subplots(figsize=(10,4))
-            ax.imshow(wc, interpolation="bilinear"); ax.axis("off")
+            wc = WordCloud(width=800, height=400, background_color="white").generate(text)
+            fig, ax = plt.subplots()
+            ax.imshow(wc, interpolation="bilinear")
+            ax.axis("off")
             st.pyplot(fig)
-    except Exception:
-        st.info("Instala `wordcloud` para ver la nube")
+        else:
+            st.warning("⚠️ No hay títulos disponibles para generar la nube de palabras.")
+    else:
+        st.warning("⚠️ No hay títulos disponibles para generar la nube de palabras.")
