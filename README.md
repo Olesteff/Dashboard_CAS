@@ -1,7 +1,6 @@
 # Dashboard Cienciométrico — CAS-UDD
 
-Este repositorio contiene el **Trabajo Fin de Máster (TFM)** en Data Science, Big Data & Business Analytics (UCM).  
-El proyecto desarrolla un **dashboard bibliométrico** para analizar la producción científica de la Facultad de Medicina Clínica Alemana – Universidad del Desarrollo (CAS–UDD).
+Este repositorio desarrolla un **dashboard bibliométrico** para analizar la producción científica de la Facultad de Medicina Clínica Alemana – Universidad del Desarrollo (CAS–UDD).
 
 ## 🚀 Cómo ejecutarlo localmente
 
