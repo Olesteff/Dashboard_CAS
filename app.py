@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Optional, List, Iterable
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -66,6 +67,9 @@ def _first_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
             return c
     return None
 
+def _norm_text(s: str) -> str:
+    return re.sub(r"\s+", " ", unidecode.unidecode(str(s).lower())).strip()
+
 def detect_department(affiliation: str) -> str:
     if not isinstance(affiliation, str):
         return "Sin asignar"
@@ -104,43 +108,29 @@ def detect_clinical_trial(row: pd.Series) -> bool:
     return bool(re.search(ct_regex, text))
 
 # =========================
-# 🔧 Funciones de Autores (CAS)
+# 🔧 Autores CAS
 # =========================
-def _norm_text(s: str) -> str:
-    return re.sub(r"\s+", " ", unidecode.unidecode(str(s).lower())).strip()
-
 def _is_cas_affil(text: str, include_udd: bool) -> bool:
-    """¿La afiliación menciona Clínica Alemana y (opcional) UDD/ICIM?"""
     t = _norm_text(text)
-    cas_hits = [
-        "clinica alemana",
-        "alemana clinic",
-    ]
+    cas_hits = ["clinica alemana", "alemana clinic"]
     udd_hits: List[str] = []
     if include_udd:
         udd_hits = [
-            "universidad del desarrollo",
-            "udd",
+            "universidad del desarrollo", "udd",
             "facultad de medicina clinica alemana",
             "instituto de ciencias e innovacion en medicina",
-            "icim",
-            "cegen",
+            "icim", "cegen",
         ]
     return any(h in t for h in cas_hits + udd_hits)
 
 _name_regex = re.compile(r"^\s*([^,;|]+)\s*,\s*([^,;|]+)")
 
 def _chunk_authors_with_affils(affils: str) -> Iterable[str]:
-    """Divide 'Authors with affiliations' en segmentos (autor + su afiliación)."""
     if not isinstance(affils, str) or not affils.strip():
         return []
     return [c.strip() for c in re.split(r";", affils) if c.strip()]
 
 def extract_cas_authors_list(affiliations: str, include_udd: bool) -> List[str]:
-    """
-    Devuelve lista de autores ('Apellido, Nombre(s)') cuando su segmento
-    de afiliación contiene claves de Clínica Alemana (y opcionalmente UDD/ICIM).
-    """
     out: List[str] = []
     for seg in _chunk_authors_with_affils(affiliations):
         if not _is_cas_affil(seg, include_udd):
@@ -155,7 +145,6 @@ def extract_cas_authors_list(affiliations: str, include_udd: bool) -> List[str]:
     return out
 
 def author_to_initials(name: str) -> str:
-    """'Apellido, Nombre(s)' -> 'Apellido, N.' (primera inicial)."""
     if not isinstance(name, str) or not name.strip():
         return ""
     name = " ".join(name.split())
@@ -170,7 +159,6 @@ def author_to_initials(name: str) -> str:
     return name.title()
 
 def author_to_full(name: str) -> str:
-    """Normaliza a 'Apellido, Nombre(s)' con capitalización."""
     if not isinstance(name, str) or not name.strip():
         return ""
     name = " ".join(name.split())
@@ -186,35 +174,43 @@ def author_to_full(name: str) -> str:
 
 def build_cas_ranking(dff: pd.DataFrame, include_udd: bool, fmt: str, top_n: int,
                       aff_col: Optional[str]) -> pd.DataFrame:
-    """Construye ranking de autores CAS leyendo 'Authors with affiliations'."""
     if not aff_col or aff_col not in dff.columns:
         return pd.DataFrame()
-
     lists = dff[aff_col].apply(lambda s: extract_cas_authors_list(s, include_udd))
     if lists.map(len).sum() == 0:
         return pd.DataFrame()
-
     ser = lists.explode().dropna().astype(str).str.strip()
     if fmt == "initials":
         ser = ser.map(author_to_initials)
     else:
         ser = ser.map(author_to_full)
-
     counts = ser.value_counts().reset_index()
     counts.columns = ["Autor", "Publicaciones"]
-    counts = counts.sort_values("Publiciciones" if "Publiciciones" in counts.columns else "Publicaciones",
-                                ascending=False)
-    return counts.head(top_n)
+    counts = counts.sort_values("Publicaciones", ascending=False).head(top_n)
+    return counts
 
 # =========================
 # Normalización de columnas
 # =========================
+def _pick_best_year(df: pd.DataFrame) -> pd.Series:
+    for c in ["Year_clean", "Publication Year", "PY", "Year", "_Year"]:
+        if c in df.columns:
+            s = pd.to_numeric(df[c], errors="coerce")
+            if s.notna().sum() > 0:
+                return s
+    return pd.Series([np.nan] * len(df))
+
+def _pick_best_journal(df: pd.DataFrame) -> pd.Series:
+    for c in ["Journal_norm_inc", "Name", "Source title", "Source Title", "Journal", "Publication Name"]:
+        if c in df.columns:
+            return df[c].astype(str)
+    return pd.Series([""] * len(df))
+
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Year
-    year_col = _first_col(df, ["_Year", "Year", "Publication Year", "PY", "Year_clean"])
-    df["Year"] = pd.to_numeric(df[year_col], errors="coerce") if year_col else pd.NA
+    df["Year"] = _pick_best_year(df)
 
     # Open Access
     oa_main = _first_col(df, ["OpenAccess_flag", "Open Access", "OA"])
@@ -236,7 +232,8 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     ])
     if q_col:
         raw = df[q_col].astype(str).str.upper().str.strip()
-        mapping = {"1":"Q1","2":"Q2","3":"Q3","4":"Q4","Q-1":"Q1","Q-2":"Q2","Q-3":"Q3","Q-4":"Q4","QUARTIL 1":"Q1","QUARTIL 2":"Q2","QUARTIL 3":"Q3","QUARTIL 4":"Q4"}
+        mapping = {"1":"Q1","2":"Q2","3":"Q3","4":"Q4","Q-1":"Q1","Q-2":"Q2","Q-3":"Q3","Q-4":"Q4",
+                   "QUARTIL 1":"Q1","QUARTIL 2":"Q2","QUARTIL 3":"Q3","QUARTIL 4":"Q4"}
         norm = raw.replace(mapping)
         norm = norm.str.extract(r"(Q[1-4])", expand=False).fillna(norm)
         df["Quartile"] = norm.where(norm.isin(["Q1","Q2","Q3","Q4"]), "Sin cuartil")
@@ -257,11 +254,49 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Ensayos clínicos
     df["ClinicalTrial_flag"] = df.apply(detect_clinical_trial, axis=1)
 
-    # Revistas
-    jr_col = _first_col(df, ["Journal_norm", "Journal", "Source Title", "Publication Name", "Source title"])
-    df["Journal_norm"] = df[jr_col].fillna("").astype(str).replace({"": "—"}) if jr_col else "—"
+    # Revistas (respeta “Revista …” y normaliza suavemente)
+    jbest = _pick_best_journal(df).fillna("").astype(str).str.strip()
 
-    # Autores
+    def fmt_journal(s: str) -> str:
+        if not s or s.lower() in {"nan", "none"}:
+            return ""
+        base = unidecode.unidecode(s.strip().lower())
+
+        # Mapeos explícitos más comunes
+        fixed = {
+            "revista medica de chile": "Revista Médica de Chile",
+            "medica chile": "Revista Médica de Chile",
+            "rev med chile": "Revista Médica de Chile",
+            "plos one": "PLOS ONE",
+            "bmj": "BMJ",
+            "nejm": "NEJM",
+            "the lancet": "The Lancet",
+            "lancet": "The Lancet",
+        }
+        if base in fixed:
+            return fixed[base]
+
+        # Si ya venía con “Revista …”, respeta la palabra “Revista”
+        keep_revista = s.strip().lower().startswith("revista ")
+
+        # Title Case suave (sin borrar conectores)
+        words = re.sub(r"\s+", " ", s.strip()).split(" ")
+        lower_exceptions = {"de","del","la","las","los","y","en","of","and","the"}
+        titled = " ".join(w.capitalize() if w.lower() not in lower_exceptions else w.lower()
+                          for w in words)
+
+        # Asegurar siglas
+        titled = re.sub(r"\bBmj\b", "BMJ", titled)
+        titled = re.sub(r"\bNejm\b", "NEJM", titled)
+        titled = re.sub(r"\bPlos One\b", "PLOS ONE", titled)
+
+        if keep_revista and not titled.lower().startswith("revista "):
+            titled = "Revista " + titled
+        return titled
+
+    df["Journal_display"] = jbest.map(fmt_journal)
+
+    # Autores (cadena)
     a_col = _first_col(df, ["Author Full Names", "Author full names", "Authors", "Author Names", "Author", "Author(s)"])
     df["Authors_norm"] = df[a_col].fillna("").astype(str) if a_col else ""
 
@@ -288,7 +323,7 @@ def setup_filters(df):
     st.sidebar.header("🔎 Filtros")
 
     with st.sidebar.expander("📅 Rango de años", expanded=False):
-        if pd.api.types.is_numeric_dtype(df["Year"]) and df["Year"].notna().any():
+        if df["Year"].notna().any():
             y_min, y_max = int(df["Year"].min()), int(df["Year"].max())
         else:
             y_min, y_max = 1900, 2100
@@ -302,7 +337,8 @@ def setup_filters(df):
         quart_filter = st.multiselect("Cuartiles", quart_vals, default=quart_vals, key="quart_multiselect")
 
     with st.sidebar.expander("🏥 Departamentos", expanded=False):
-        dept_filter = st.multiselect("Departamentos", sorted(df["Departamento"].astype(str).unique()), default=None, key="dept_multiselect")
+        depts = sorted(x for x in df["Departamento"].astype(str).unique() if x != "Sin asignar")
+        dept_filter = st.multiselect("Departamentos", depts, default=None, key="dept_multiselect")
 
     with st.sidebar.expander("🔍 Búsqueda", expanded=False):
         search_term = st.text_input("Buscar en títulos", key="search_input")
@@ -318,22 +354,27 @@ def main():
 
     st.sidebar.header("📊 Información del Dataset")
     st.sidebar.write(f"📄 Total de publicaciones: {len(df)}")
-    if pd.api.types.is_numeric_dtype(df["Year"]) and df["Year"].notna().any():
+    if df["Year"].notna().any():
         st.sidebar.write(f"📅 Años: {int(df['Year'].min())} - {int(df['Year'].max())}")
     st.sidebar.write(f"🏥 Departamentos únicos: {df['Departamento'].nunique()}")
 
-    # Filtros
+    # Filtros (incluye sin año por defecto)
     year_range, oa_filter, quart_filter, dept_filter, search_term = setup_filters(df)
 
     mask = pd.Series(True, index=df.index)
-    mask &= df["Year"].fillna(-1).astype(int).between(year_range[0], year_range[1])
+    yr_ok = df["Year"].between(year_range[0], year_range[1], inclusive="both")
+    mask &= (df["Year"].isna() | yr_ok)
+
     if oa_filter == "Solo OA":
         mask &= df["OpenAccess_flag"]
     elif oa_filter == "No OA":
         mask &= ~df["OpenAccess_flag"]
+
     mask &= df["Quartile"].isin(quart_filter)
+
     if dept_filter:
         mask &= df["Departamento"].isin(dept_filter)
+
     if search_term.strip():
         mask &= df["Title"].fillna("").str.contains(search_term, case=False, na=False)
 
@@ -350,7 +391,6 @@ def main():
     with col3: st.metric("📈 Suma JIF", f"{dff['Journal Impact Factor'].sum():.1f}")
     with col4: st.metric("🧪 Ensayos clínicos", int(dff["ClinicalTrial_flag"].sum()))
 
-    # Citas
     if "Cited by" in dff.columns:
         total_citas = pd.to_numeric(dff["Cited by"], errors="coerce").fillna(0)
     elif "Times Cited" in dff.columns:
@@ -377,20 +417,52 @@ def main():
     # --- Publicaciones
     with tabs[0]:
         st.subheader("📅 Publicaciones por año")
-        g = dff.dropna(subset=["Year"]).astype({"Year": int}).groupby("Year").size().reset_index(name="Publicaciones")
-        fig = px.bar(g, x="Year", y="Publicaciones", title="Publicaciones por Año", text="Publicaciones")
+        g = dff.copy()
+        g["Year_int"] = pd.to_numeric(g["Year"], errors="coerce").astype("Int64")
+        gg = (
+            g[g["Year_int"].notna()]
+            .groupby("Year_int")
+            .size()
+            .reset_index(name="Publicaciones")
+            .sort_values("Year_int")
+        )
+        fig = px.bar(gg, x="Year_int", y="Publicaciones", title="Publicaciones por Año", text="Publicaciones")
+        fig.update_layout(
+            margin=dict(l=10, r=10, t=50, b=10),
+            font=dict(size=10),
+            xaxis=dict(title="Año", dtick=1),
+            yaxis=dict(title="Publicaciones"),
+        )
         fig.update_traces(textposition='outside')
-        fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10))
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("📈 Suma JIF por año")
-        j = dff.dropna(subset=["Year"]).astype({"Year": int}).groupby("Year")["Journal Impact Factor"].sum().reset_index()
-        j = j.rename(columns={"Journal Impact Factor": "Suma JIF"})
-        j["Suma JIF"] = j["Suma JIF"].round(1)
-        fig = px.line(j, x="Year", y="Suma JIF", markers=True, title="Suma JIF por Año", text="Suma JIF")
-        fig.update_traces(textposition="top center")
-        fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10))
-        st.plotly_chart(fig, use_container_width=True)
+        j = dff.copy()
+        j["Year_int"] = pd.to_numeric(j["Year"], errors="coerce").astype("Int64")
+        j = j[j["Year_int"].notna() & (j["Year_int"] <= 2025)]
+        if not j.empty:
+            jj = (
+                j.groupby("Year_int")["Journal Impact Factor"]
+                 .sum(min_count=1)
+                 .reset_index()
+                 .rename(columns={"Year_int": "Year", "Journal Impact Factor": "Suma JIF"})
+            )
+            y_min = int(jj["Year"].min())
+            full_years = pd.DataFrame({"Year": range(y_min, 2025 + 1)})
+            jj = full_years.merge(jj, on="Year", how="left").fillna({"Suma JIF": 0})
+            jj["Suma JIF"] = jj["Suma JIF"].round(1)
+
+            fig = px.line(jj, x="Year", y="Suma JIF", markers=True, title="Suma JIF por Año", text="Suma JIF")
+            fig.update_traces(textposition="top center")
+            fig.update_layout(
+                margin=dict(l=10, r=10, t=50, b=10),
+                font=dict(size=10),
+                xaxis=dict(title="Año", dtick=1),
+                yaxis=dict(title="Suma JIF"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No hay datos con año válido (≤ 2025) para el gráfico de JIF.")
 
     # --- Cuartiles
     with tabs[1]:
@@ -412,8 +484,13 @@ def main():
 
     # --- Departamentos
     with tabs[3]:
-        st.subheader("🏥 Publicaciones por Departamento")
-        dep = dff["Departamento"].fillna("Sin asignar").value_counts().reset_index()
+        st.subheader("🏥 Publicaciones por Departamento (sin 'Sin asignar')")
+        dep = (
+            dff.loc[dff["Departamento"] != "Sin asignar", "Departamento"]
+            .fillna("—")
+            .value_counts()
+            .reset_index()
+        )
         dep.columns = ["Departamento", "Publicaciones"]
         fig = px.bar(dep, x="Departamento", y="Publicaciones", title="Top Departamentos", text="Publicaciones")
         fig.update_traces(textposition='outside')
@@ -423,31 +500,32 @@ def main():
     # --- Revistas
     with tabs[4]:
         st.subheader("📑 Revistas más frecuentes")
-        def format_journal_name(name: str) -> str:
-            if not isinstance(name, str) or not name.strip():
-                return "—"
-            formatted = re.sub(r"\s+", " ", name.strip())
-            words = formatted.split()
-            formatted = " ".join([w.capitalize() if len(w) > 2 else w.lower() for w in words])
-            for wrong, right in {"De":"de","La":"la","El":"el","Y":"y","En":"en","Del":"del","Los":"los","Las":"las"}.items():
-                formatted = formatted.replace(f" {wrong} ", f" {right} ")
-            normalization_map = {"Medica Chile":"Revista Médica de Chile"}
-            return normalization_map.get(formatted, formatted)
-
-        dff["Journal_formatted"] = dff["Journal_norm"].apply(format_journal_name)
-        journals = dff["Journal_formatted"].fillna("—").value_counts().head(20).reset_index()
-        journals.columns = ["Revista", "Publicaciones"]
-        fig = px.bar(
-            journals.sort_values("Publicaciones"), 
-            x="Publicaciones", y="Revista", orientation="h",
-            title="Top 20 Revistas", text="Publicaciones"
+        journals = (
+            dff["Journal_display"]
+            .replace({"nan": "", "None": "", "—": ""})
+            .astype(str).str.strip()
         )
-        fig.update_layout(yaxis=dict(categoryorder='total ascending'),
-                          margin=dict(l=260, r=10, t=50, b=10), height=560,
-                          yaxis_tickfont=dict(size=12), font=dict(size=10))
+        journals = journals[journals != ""]
+        jr = journals.value_counts().head(20).reset_index()
+        jr.columns = ["Revista", "Publicaciones"]
+
+        fig = px.bar(
+            jr.sort_values("Publicaciones"),
+            x="Publicaciones", y="Revista",
+            orientation="h",
+            title="Top 20 Revistas",
+            text="Publicaciones"
+        )
+        fig.update_layout(
+            yaxis=dict(categoryorder='total ascending'),
+            margin=dict(l=260, r=10, t=50, b=10),
+            height=560,
+            yaxis_tickfont=dict(size=12),
+            font=dict(size=10)
+        )
         fig.update_traces(textposition='inside', insidetextanchor='start')
         st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(journals, use_container_width=True)
+        st.dataframe(jr, use_container_width=True)
 
     # --- 👥 Autores (CAS)
     with tabs[5]:
@@ -459,15 +537,18 @@ def main():
         if not aff_col:
             st.warning("No se encontró la columna de afiliaciones (p. ej. 'Authors with affiliations').")
         else:
-            # Controles
-            colA, colB, colC = st.columns([1.2, 1.2, 1])
+            colA, colB, colC = st.columns([1.2, 1.6, 1])
             with colA:
-                fmt_choice = st.radio("Formato:",
-                                      ["Apellido, Inicial", "Apellido, Nombre(s)"],
-                                      horizontal=True, index=1)
+                fmt_choice = st.radio(
+                    "Formato:",
+                    ["Apellido, Inicial", "Apellido, Nombre(s)"],
+                    horizontal=True, index=0
+                )
             with colB:
-                include_udd = st.checkbox("Incluir UDD/ICIM/F. Medicina además de Clínica Alemana",
-                                          value=True)
+                include_udd = st.checkbox(
+                    "Incluir UDD/ICIM/F. Medicina además de Clínica Alemana",
+                    value=True
+                )
             with colC:
                 top_n = st.slider("Top N", min_value=10, max_value=100, value=50, step=5)
 
@@ -477,9 +558,11 @@ def main():
             if ranking.empty:
                 st.info("No se detectaron autores CAS en el subconjunto filtrado.")
             else:
-                # Gráfico (fix etiquetas perdidas al mover Top N)
-                plot_df = ranking.sort_values("Publicaciones", ascending=True).copy()
-                ordered_y = plot_df["Autor"].tolist()
+                plot_df = ranking.sort_values("Publicaciones", ascending=True)
+
+                # Margen izquierdo dinámico para que SIEMPRE se vea el primer autor
+                max_label_len = int(plot_df["Autor"].astype(str).str.len().max())
+                left_margin = min(520, 160 + max_label_len * 7)
 
                 fig = px.bar(
                     plot_df, x="Publicaciones", y="Autor",
@@ -488,28 +571,17 @@ def main():
                     text="Publicaciones",
                 )
                 fig.update_layout(
-                    yaxis=dict(
-                        categoryorder='array',          # usar el orden exacto
-                        categoryarray=ordered_y,        # …con esta lista
-                        dtick=1,                        # mostrar TODAS las etiquetas
-                        automargin=True,
-                        title="Autor",
-                    ),
-                    margin=dict(l=320, r=20, t=60, b=40),
-                    height=max(400, min(1200, 22 * len(plot_df) + 140)),  # altura dinámica
-                    bargap=0.12,
-                    showlegend=False,
-                    font=dict(size=12),
+                    yaxis=dict(categoryorder='total ascending', automargin=True, title="Autor"),
+                    margin=dict(l=left_margin, r=20, t=60, b=40),
+                    height=max(500, 20 * len(plot_df) + 160),
+                    font=dict(size=12)
                 )
-                fig.update_traces(
-                    textposition='inside',
-                    insidetextanchor='start',
-                )
+                fig.update_traces(textposition='inside', insidetextanchor='start')
                 st.plotly_chart(fig, use_container_width=True)
 
-                # Tabla y descarga
                 st.subheader("📋 Ranking (tabla)")
                 st.dataframe(ranking, use_container_width=True, height=400)
+
                 csv_bytes = ranking.to_csv(index=False).encode("utf-8-sig")
                 st.download_button(
                     "⬇️ Descargar ranking CAS (CSV)",
@@ -520,24 +592,40 @@ def main():
 
     # --- Wordcloud
     with tabs[6]:
-        st.subheader("☁️ Wordcloud de títulos")
+        st.subheader("☁️ Wordcloud (Keywords)")
         try:
             from wordcloud import WordCloud, STOPWORDS
             import matplotlib.pyplot as plt
-            custom_stopwords = set(STOPWORDS)
-            custom_stopwords.update(["el","la","los","las","un","una","unos","unas","de","del","y","en","por","para","con",
-                                     "the","a","an","of","for","to","with","on","at","by","from","they","their","this",
-                                     "that","these","those"])
-            text = " ".join(dff["Title"].dropna().astype(str).tolist())
-            if text.strip():
+
+            kw_cols = [
+                "Author Keywords", "Author keywords", "Author Keywords Plus",
+                "Keywords", "Indexed Keywords", "Index Keywords",
+                "AuthKeywords", "DE", "ID", "Keywords Plus"
+            ]
+            kws = []
+            for c in kw_cols:
+                if c in dff.columns:
+                    kws.append(dff[c].dropna().astype(str))
+            if kws:
+                kw_text = " ; ".join(pd.concat(kws).tolist())
+            else:
+                kw_text = " ".join(dff["Title"].dropna().astype(str).tolist())
+
+            if kw_text.strip():
+                custom_stop = set(STOPWORDS)
+                custom_stop.update([
+                    "el","la","los","las","un","una","unos","unas","de","del","y","en",
+                    "por","para","con","the","a","an","of","for","to","with","on","at",
+                    "by","from","they","their","this","that","these","those"
+                ])
                 wc = WordCloud(width=1200, height=500, background_color="white",
-                               stopwords=custom_stopwords).generate(text)
+                               stopwords=custom_stop).generate(kw_text)
                 fig, ax = plt.subplots(figsize=(10, 4))
                 ax.imshow(wc, interpolation="bilinear")
                 ax.axis("off")
                 st.pyplot(fig, use_container_width=True, clear_figure=True)
             else:
-                st.info("No hay títulos para construir la nube.")
+                st.info("No hay palabras clave para construir la nube.")
         except Exception:
             st.info("Instala la librería `wordcloud` para ver esta sección:  `pip install wordcloud`")
 
@@ -545,11 +633,21 @@ def main():
     with tabs[7]:
         st.subheader("📖 Citas por año")
         if not total_citas.empty:
-            citas_year = dff.groupby("Year")[total_citas.name].sum().reset_index()
-            citas_year = citas_year.rename(columns={total_citas.name: "Citas"})
+            dff_tmp = dff.copy()
+            dff_tmp["Year_int"] = pd.to_numeric(dff_tmp["Year"], errors="coerce").astype("Int64")
+            citas_year = (
+                dff_tmp[dff_tmp["Year_int"].notna()]
+                .groupby("Year_int")[total_citas.name]
+                .sum()
+                .reset_index()
+                .rename(columns={"Year_int":"Year", total_citas.name:"Citas"})
+            )
             fig = px.bar(citas_year, x="Year", y="Citas", title="Citas por Año", text="Citas")
             fig.update_traces(textposition='outside')
-            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10))
+            fig.update_layout(
+                autosize=True, margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
+                xaxis=dict(dtick=1)
+            )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No hay datos de citas en este dataset.")
