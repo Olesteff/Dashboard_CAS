@@ -22,6 +22,48 @@ st.set_page_config(
 )
 
 # =========================
+# AUTENTICACIÓN POR CONTRASEÑA
+# =========================
+def check_password():
+    st.markdown(
+        "<h2 style='text-align:center;'>🔐 Dashboard CAS–UDD</h2>"
+        "<p style='text-align:center;'>Ingrese la contraseña para continuar.</p>",
+        unsafe_allow_html=True
+    )
+
+    def password_entered():
+        if st.session_state.get("password", "") == st.secrets.get("dashboard_password", ""):
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.text_input(
+            "Contraseña:",
+            type="password",
+            on_change=password_entered,
+            key="password"
+        )
+        st.stop()
+
+    if st.session_state["password_correct"] is False:
+        st.text_input(
+            "Contraseña:",
+            type="password",
+            on_change=password_entered,
+            key="password"
+        )
+        st.error("❌ Contraseña incorrecta")
+        st.stop()
+
+    return True
+
+check_password()
+
+
+
+# =========================
 # Encabezado
 # =========================
 st.markdown("""
