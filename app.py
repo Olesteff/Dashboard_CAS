@@ -92,6 +92,22 @@ def detect_department(affiliation: str) -> str:
         ("cirug", "Cirugía"),
         ("anestesi", "Anestesiología"),
         ("cardiol", "Cardiología"),
+        # Nuevos departamentos agregados:
+        ("laboratorio", "Laboratorio Clínico"),
+        ("laboratory", "Laboratorio Clínico"),
+        ("lab clinico", "Laboratorio Clínico"),
+        ("paciente critico", "Paciente Crítico"),
+        ("critical care", "Paciente Crítico"),
+        ("critical patient", "Paciente Crítico"),
+        ("unidad cuidados intensivos", "Paciente Crítico"),
+        ("intensive care", "Paciente Crítico"),
+        ("uci", "Paciente Crítico"),
+        ("medicina fisica", "Medicina Física y Rehabilitación"),
+        ("rehabilitacion", "Medicina Física y Rehabilitación"),
+        ("rehabilitation", "Medicina Física y Rehabilitación"),
+        ("fisiatria", "Medicina Física y Rehabilitación"),
+        ("physical medicine", "Medicina Física y Rehabilitación"),
+        ("physiatry", "Medicina Física y Rehabilitación"),
     ]
     for kw, dep in rules:
         if kw in aff:
@@ -224,21 +240,50 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     jif_col = _first_col(df, ["Journal Impact Factor", "Impact Factor", "JIF", "JIF_2023", "JCR_IF"])
     df["Journal Impact Factor"] = pd.to_numeric(df[jif_col], errors="coerce").fillna(0) if jif_col else 0
 
-    # Quartile
-    q_col = _first_col(df, [
-        "JIF Quartile", "JCR Quartile", "JCR_Quartile",
-        "JCI Quartile", "SJR Quartile", "SJR_Quartile",
-        "Quartile_JCR", "quartile_std", "Quartile",
-    ])
-    if q_col:
-        raw = df[q_col].astype(str).str.upper().str.strip()
-        mapping = {"1":"Q1","2":"Q2","3":"Q3","4":"Q4","Q-1":"Q1","Q-2":"Q2","Q-3":"Q3","Q-4":"Q4",
-                   "QUARTIL 1":"Q1","QUARTIL 2":"Q2","QUARTIL 3":"Q3","QUARTIL 4":"Q4"}
-        norm = raw.replace(mapping)
-        norm = norm.str.extract(r"(Q[1-4])", expand=False).fillna(norm)
-        df["Quartile"] = norm.where(norm.isin(["Q1","Q2","Q3","Q4"]), "Sin cuartil")
-    else:
-        df["Quartile"] = "Sin cuartil"
+    # ============================================================
+    # 🔥 CUARTIL — PRIORIDAD ABSOLUTA:
+    #    1) SJR Best Quartile
+    #    2) JIF Quartile
+    #    3) JCI Quartile
+    # ============================================================
+
+    sjr_col    = _first_col(df, ["SJR Best Quartile", "Best Quartile"])
+    jif_q_col  = _first_col(df, ["JIF Quartile", "JCR Quartile"])
+    jci_q_col  = _first_col(df, ["JCI Quartile"])
+
+    # Normalizar helper
+    def norm_q(x):
+        x = str(x).upper().strip()
+        if x in ["Q1","Q2","Q3","Q4"]:
+            return x
+        if x in ["1","2","3","4"]:
+            return f"Q{x}"
+        return None
+
+    quart_final = []
+
+    for i in range(len(df)):
+        q_val = None
+
+        # 1) SJR primero
+        if sjr_col and sjr_col in df.columns:
+            q_val = norm_q(df.loc[i, sjr_col])
+
+        # 2) Luego JIF
+        if not q_val and jif_q_col and jif_q_col in df.columns:
+            q_val = norm_q(df.loc[i, jif_q_col])
+
+        # 3) Luego JCI
+        if not q_val and jci_q_col and jci_q_col in df.columns:
+            q_val = norm_q(df.loc[i, jci_q_col])
+
+        # 4) Por defecto
+        if not q_val:
+            q_val = "Sin cuartil"
+
+        quart_final.append(q_val)
+
+    df["Quartile"] = quart_final
 
     # Departamento
     aff_col = _first_col(df, [
@@ -254,7 +299,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Ensayos clínicos
     df["ClinicalTrial_flag"] = df.apply(detect_clinical_trial, axis=1)
 
-    # Revistas (respeta “Revista …” y normaliza suavemente)
+    # Revistas (respeta "Revista …" y normaliza suavemente)
     jbest = _pick_best_journal(df).fillna("").astype(str).str.strip()
 
     def fmt_journal(s: str) -> str:
@@ -276,7 +321,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         if base in fixed:
             return fixed[base]
 
-        # Si ya venía con “Revista …”, respeta la palabra “Revista”
+        # Si ya venía con "Revista …", respeta la palabra "Revista"
         keep_revista = s.strip().lower().startswith("revista ")
 
         # Title Case suave (sin borrar conectores)
@@ -391,14 +436,23 @@ def main():
     with col3: st.metric("📈 Suma JIF", f"{dff['Journal Impact Factor'].sum():.1f}")
     with col4: st.metric("🧪 Ensayos clínicos", int(dff["ClinicalTrial_flag"].sum()))
 
-    if "Cited by" in dff.columns:
-        total_citas = pd.to_numeric(dff["Cited by"], errors="coerce").fillna(0)
-    elif "Times Cited" in dff.columns:
-        total_citas = pd.to_numeric(dff["Times Cited"], errors="coerce").fillna(0)
+    # Detectar columna de citas
+    citas_col = None
+    for col in ["Cited by", "Times Cited", "Citation Count", "Citas"]:
+        if col in dff.columns:
+            citas_col = col
+            break
+    
+    if citas_col:
+        total_citas = pd.to_numeric(dff[citas_col], errors="coerce").fillna(0)
     else:
-        total_citas = pd.Series([0]*len(dff))
-    h_index = int(sum(total_citas.sort_values(ascending=False).reset_index(drop=True) >= 
-                      (np.arange(len(total_citas)) + 1)))
+        total_citas = pd.Series([0] * len(dff))
+    
+    h_index = 0
+    if len(total_citas) > 0:
+        sorted_citas = total_citas.sort_values(ascending=False).reset_index(drop=True)
+        h_index = int(sum(sorted_citas >= (np.arange(len(sorted_citas)) + 1)))
+    
     col5, col6, col7, col8 = st.columns(4)
     with col5: st.metric("📖 Total citas", int(total_citas.sum()))
     with col6: st.metric("📖 Promedio citas", f"{total_citas.mean():.1f}")
@@ -426,15 +480,18 @@ def main():
             .reset_index(name="Publicaciones")
             .sort_values("Year_int")
         )
-        fig = px.bar(gg, x="Year_int", y="Publicaciones", title="Publicaciones por Año", text="Publicaciones")
-        fig.update_layout(
-            margin=dict(l=10, r=10, t=50, b=10),
-            font=dict(size=10),
-            xaxis=dict(title="Año", dtick=1),
-            yaxis=dict(title="Publicaciones"),
-        )
-        fig.update_traces(textposition='outside')
-        st.plotly_chart(fig, use_container_width=True)
+        if not gg.empty:
+            fig = px.bar(gg, x="Year_int", y="Publicaciones", title="Publicaciones por Año", text="Publicaciones")
+            fig.update_layout(
+                margin=dict(l=10, r=10, t=50, b=10),
+                font=dict(size=10),
+                xaxis=dict(title="Año", dtick=1),
+                yaxis=dict(title="Publicaciones"),
+            )
+            fig.update_traces(textposition='outside')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No hay datos con año válido para el gráfico.")
 
         st.subheader("📈 Suma JIF por año")
         j = dff.copy()
@@ -484,7 +541,7 @@ def main():
 
     # --- Departamentos
     with tabs[3]:
-        st.subheader("🏥 Publicaciones por Departamento (sin 'Sin asignar')")
+        st.subheader("🏥 Publicaciones por Departamento (En Pruebas)")
         dep = (
             dff.loc[dff["Departamento"] != "Sin asignar", "Departamento"]
             .fillna("—")
@@ -492,10 +549,13 @@ def main():
             .reset_index()
         )
         dep.columns = ["Departamento", "Publicaciones"]
-        fig = px.bar(dep, x="Departamento", y="Publicaciones", title="Top Departamentos", text="Publicaciones")
-        fig.update_traces(textposition='outside')
-        fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10))
-        st.plotly_chart(fig, use_container_width=True)
+        if not dep.empty:
+            fig = px.bar(dep, x="Departamento", y="Publicaciones", title="Top Departamentos", text="Publicaciones")
+            fig.update_traces(textposition='outside')
+            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10))
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No hay datos de departamentos para mostrar.")
 
     # --- Revistas
     with tabs[4]:
@@ -509,23 +569,26 @@ def main():
         jr = journals.value_counts().head(20).reset_index()
         jr.columns = ["Revista", "Publicaciones"]
 
-        fig = px.bar(
-            jr.sort_values("Publicaciones"),
-            x="Publicaciones", y="Revista",
-            orientation="h",
-            title="Top 20 Revistas",
-            text="Publicaciones"
-        )
-        fig.update_layout(
-            yaxis=dict(categoryorder='total ascending'),
-            margin=dict(l=260, r=10, t=50, b=10),
-            height=560,
-            yaxis_tickfont=dict(size=12),
-            font=dict(size=10)
-        )
-        fig.update_traces(textposition='inside', insidetextanchor='start')
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(jr, use_container_width=True)
+        if not jr.empty:
+            fig = px.bar(
+                jr.sort_values("Publicaciones"),
+                x="Publicaciones", y="Revista",
+                orientation="h",
+                title="Top 20 Revistas",
+                text="Publicaciones"
+            )
+            fig.update_layout(
+                yaxis=dict(categoryorder='total ascending'),
+                margin=dict(l=260, r=10, t=50, b=10),
+                height=560,
+                yaxis_tickfont=dict(size=12),
+                font=dict(size=10)
+            )
+            fig.update_traces(textposition='inside', insidetextanchor='start')
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(jr, use_container_width=True)
+        else:
+            st.info("No hay datos de revistas para mostrar.")
 
     # --- 👥 Autores (CAS)
     with tabs[5]:
@@ -626,29 +689,34 @@ def main():
                 st.pyplot(fig, use_container_width=True, clear_figure=True)
             else:
                 st.info("No hay palabras clave para construir la nube.")
-        except Exception:
-            st.info("Instala la librería `wordcloud` para ver esta sección:  `pip install wordcloud`")
+        except Exception as e:
+            st.info(f"Instala la librería `wordcloud` para ver esta sección: `pip install wordcloud`")
+            st.info(f"Error: {e}")
 
     # --- Citas por año
     with tabs[7]:
         st.subheader("📖 Citas por año")
-        if not total_citas.empty:
+        if citas_col and not total_citas.empty and (total_citas > 0).any():
             dff_tmp = dff.copy()
             dff_tmp["Year_int"] = pd.to_numeric(dff_tmp["Year"], errors="coerce").astype("Int64")
+            dff_tmp["Citas"] = pd.to_numeric(dff_tmp[citas_col], errors="coerce").fillna(0)
             citas_year = (
                 dff_tmp[dff_tmp["Year_int"].notna()]
-                .groupby("Year_int")[total_citas.name]
+                .groupby("Year_int")["Citas"]
                 .sum()
                 .reset_index()
-                .rename(columns={"Year_int":"Year", total_citas.name:"Citas"})
+                .rename(columns={"Year_int":"Year"})
             )
-            fig = px.bar(citas_year, x="Year", y="Citas", title="Citas por Año", text="Citas")
-            fig.update_traces(textposition='outside')
-            fig.update_layout(
-                autosize=True, margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
-                xaxis=dict(dtick=1)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            if not citas_year.empty:
+                fig = px.bar(citas_year, x="Year", y="Citas", title="Citas por Año", text="Citas")
+                fig.update_traces(textposition='outside')
+                fig.update_layout(
+                    autosize=True, margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
+                    xaxis=dict(dtick=1)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No hay datos de citas por año.")
         else:
             st.info("No hay datos de citas en este dataset.")
 
