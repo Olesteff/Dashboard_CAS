@@ -21,17 +21,39 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
 # =========================
 # Encabezado
 # =========================
+
+# Logo centrado usando HTML para mejor control
+if Path("LOGO CAS_UDD.png").exists():
+    import base64
+    with open("LOGO CAS_UDD.png", "rb") as f:
+        logo_bytes = f.read()
+    logo_base64 = base64.b64encode(logo_bytes).decode()
+    
+    st.markdown(f"""
+        <div style="display: flex; justify-content: center; align-items: center; padding: 20px 0; margin: 10px 0;">
+            <img src="data:image/png;base64,{logo_base64}" style="width: 220px; height: auto; display: block;">
+        </div>
+    """, unsafe_allow_html=True)
+else:
+    st.warning("Logo no encontrado: LOGO CAS_UDD.png")
+
+# Título y subtítulos
 st.markdown("""
     <div style="background-color:#f0f2f6;padding:25px;border-radius:10px;margin-bottom:25px;border-left:5px solid #1f77b4">
         <h1 style="color:#1f77b4;text-align:center;margin:0;">📊 Dashboard de Producción Científica</h1>
-        <p style="text-align:center;color:#555;margin:10px 0 0 0;font-size:16px;">
-            Análisis bibliométrico - Clínica Alemana Universidad del Desarrollo
+        <p style="text-align:center;color:#555;margin:10px 0 5px 0;font-size:18px;">
+            Facultad de Medicina Clínica Alemana - Universidad del Desarrollo
+        </p>
+        <p style="text-align:center;color:#666;margin:5px 0 0 0;font-size:14px;font-style:italic;">
+            Análisis creado con técnicas de big data y ciencia de datos a partir de Scopus, Web of Science, Pubmed, Incites y Scimago
         </p>
     </div>
 """, unsafe_allow_html=True)
+
 
 # =========================
 # Responsive (móvil)
@@ -385,10 +407,19 @@ def setup_filters(df):
         depts = sorted(x for x in df["Departamento"].astype(str).unique() if x != "Sin asignar")
         dept_filter = st.multiselect("Departamentos", depts, default=None, key="dept_multiselect")
 
+    with st.sidebar.expander("📄 Tipo de Documento", expanded=False):
+        doc_col = _first_col(df, ["Document Type", "Publication Type", "DT", "Type", "Tipo"])
+        if doc_col:
+            doc_types = sorted(df[doc_col].dropna().astype(str).unique())
+            doc_filter = st.multiselect("Tipos de documento", doc_types, default=None, key="doc_multiselect")
+        else:
+            doc_filter = None
+            st.info("No se encontró columna de tipo de documento.")
+
     with st.sidebar.expander("🔍 Búsqueda", expanded=False):
         search_term = st.text_input("Buscar en títulos", key="search_input")
     
-    return year_range, oa_filter, quart_filter, dept_filter, search_term
+    return year_range, oa_filter, quart_filter, dept_filter, search_term, doc_filter
 
 # =========================
 # MAIN
@@ -404,7 +435,7 @@ def main():
     st.sidebar.write(f"🏥 Departamentos únicos: {df['Departamento'].nunique()}")
 
     # Filtros (incluye sin año por defecto)
-    year_range, oa_filter, quart_filter, dept_filter, search_term = setup_filters(df)
+    year_range, oa_filter, quart_filter, dept_filter, search_term, doc_filter = setup_filters(df)
 
     mask = pd.Series(True, index=df.index)
     yr_ok = df["Year"].between(year_range[0], year_range[1], inclusive="both")
@@ -419,6 +450,11 @@ def main():
 
     if dept_filter:
         mask &= df["Departamento"].isin(dept_filter)
+
+    if doc_filter:
+        doc_col = _first_col(df, ["Document Type", "Publication Type", "DT", "Type", "Tipo"])
+        if doc_col:
+            mask &= df[doc_col].astype(str).isin(doc_filter)
 
     if search_term.strip():
         mask &= df["Title"].fillna("").str.contains(search_term, case=False, na=False)
