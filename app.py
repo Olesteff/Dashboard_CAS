@@ -212,13 +212,55 @@ def author_to_full(name: str) -> str:
 
 
 
-def canon_author(name: str) -> str:
+def _looks_like_initials(s: str) -> bool:
+    s = str(s).strip().replace(" ", "")
+    if not s:
+        return False
+    parts = [p for p in re.split(r"\.", s) if p]
+    if not parts:
+        return False
+    return all(len(p) <= 2 for p in parts) and sum(ch.isalpha() for ch in s) <= 5
+
+def _clean_author_name(name: str) -> str:
     name = str(name).strip()
     if not name or name.lower() in {"nan", "none"}:
         return ""
-
-    # limpiar IDs tipo "(57188955599)"
     name = re.sub(r"\s*\([^\)]*\)\s*$", "", name).strip()
+    name = re.sub(r"\s+", " ", name).strip(" ,;|")
+    return name
+
+def _normalize_author_name(name: str) -> str:
+    name = _clean_author_name(name)
+    if not name:
+        return ""
+
+    # Caso con coma
+    if "," in name:
+        left, right = [p.strip() for p in name.split(",", 1)]
+        if not left or not right:
+            return name
+
+        # Si el lado izquierdo son iniciales y el derecho parece apellido, invertir
+        if _looks_like_initials(left) and not _looks_like_initials(right):
+            surname, given = right, left
+        else:
+            surname, given = left, right
+
+        return f"{surname}, {given}"
+
+    # Caso sin coma tipo "Lavados P.M."
+    m = re.match(r"^(?P<surname>.+?)\s+(?P<initials>[A-Z](?:\.?[A-Z]){0,4}\.?)$", name)
+    if m:
+        surname = m.group("surname").strip()
+        given = m.group("initials").strip()
+        return f"{surname}, {given}"
+
+    return name
+
+def canon_author(name: str) -> str:
+    name = _normalize_author_name(name)
+    if not name:
+        return ""
 
     if "," in name:
         last, given = [p.strip() for p in name.split(",", 1)]
@@ -241,34 +283,44 @@ def canon_author(name: str) -> str:
 
     return f"{last_norm}|{first_alpha}"
 
-def _clean_author_name(name: str) -> str:
-    name = str(name).strip()
-    if not name or name.lower() in {"nan", "none"}:
-        return ""
-    name = re.sub(r"\s*\([^\)]*\)\s*$", "", name).strip()
-    name = re.sub(r"\s+", " ", name).strip(" ,;|")
-    return name
+def _get_author_list_from_row(row: pd.Series) -> list[str]:
+    candidates = [
+        "Author full names",
+        "Author Full Names",
+        "Authors",
+        "Author Names",
+        "Author",
+        "Author(s)",
+    ]
 
-def _split_author_names(raw_authors: str) -> list[str]:
-    if pd.isna(raw_authors):
-        return []
-    authors = str(raw_authors).strip()
-    if not authors or authors.lower() in {"nan", "none"}:
-        return []
+    merged = []
+    for col in candidates:
+        if col not in row.index:
+            continue
 
-    if ";" in authors:
-        items = [a.strip() for a in authors.split(";") if a.strip()]
-    elif "|" in authors:
-        items = [a.strip() for a in authors.split("|") if a.strip()]
-    else:
-        items = [authors]
+        raw = row.get(col, "")
+        if pd.isna(raw):
+            continue
+
+        txt = str(raw).strip()
+        if not txt or txt.lower() in {"nan", "none"}:
+            continue
+
+        if ";" in txt:
+            parts = [x.strip() for x in txt.split(";") if x.strip()]
+        elif "|" in txt:
+            parts = [x.strip() for x in txt.split("|") if x.strip()]
+        else:
+            parts = [txt]
+
+        for p in parts:
+            p = _normalize_author_name(p)
+            if p:
+                merged.append(p)
 
     out = []
     seen = set()
-    for a in items:
-        a = _clean_author_name(a)
-        if not a:
-            continue
+    for a in merged:
         k = _norm_text(a)
         if k not in seen:
             out.append(a)
@@ -277,12 +329,11 @@ def _split_author_names(raw_authors: str) -> list[str]:
 
 def build_cas_ranking(dff: pd.DataFrame, include_udd: bool, fmt: str, top_n: int,
                       aff_col: Optional[str], author_col: Optional[str]) -> pd.DataFrame:
-    if not aff_col or aff_col not in dff.columns or not author_col or author_col not in dff.columns:
+    if not aff_col or aff_col not in dff.columns:
         return pd.DataFrame()
 
     work = dff.copy()
 
-    # ID de publicación
     id_col = None
     for c in ["ID_final", "DOI", "EID", "UT", "PMID"]:
         if c in work.columns:
@@ -292,26 +343,21 @@ def build_cas_ranking(dff: pd.DataFrame, include_udd: bool, fmt: str, top_n: int
         work["_id"] = work.index.astype(str)
         id_col = "_id"
 
-    # Filtrar publicaciones CAS/UDD a nivel de publicación
     mask = work[aff_col].fillna("").astype(str).apply(lambda x: _is_cas_affil(x, include_udd))
     work = work.loc[mask].copy()
 
     rows = []
-
     for _, row in work.iterrows():
         pub_id = row[id_col]
-        author_list = _split_author_names(row.get(author_col, ""))
-
+        author_list = _get_author_list_from_row(row)
         if not author_list:
             continue
 
         seen_in_pub = set()
-
         for a in author_list:
             key = canon_author(a)
             if not key or key in seen_in_pub:
                 continue
-
             seen_in_pub.add(key)
             rows.append({
                 "Autor_original": a,
@@ -331,25 +377,38 @@ def build_cas_ranking(dff: pd.DataFrame, include_udd: bool, fmt: str, top_n: int
     )
 
     def pick_name(series: pd.Series) -> str:
-        vals = series.dropna().astype(str).map(_clean_author_name)
+        vals = series.dropna().astype(str).map(_normalize_author_name)
         vals = vals[(vals != "") & (~vals.str.lower().isin(["nan", "none"]))]
         if vals.empty:
             return ""
 
-        if fmt == "initials":
-            shown = vals.map(author_to_initials)
-        else:
-            shown = vals.map(author_to_full)
+        # Preferir nombres más informativos y en formato apellido, nombre
+        scored = []
+        for v in vals.tolist():
+            if "," in v:
+                last, given = [p.strip() for p in v.split(",", 1)]
+            else:
+                last, given = v, ""
+            score = (
+                1 if "," in v else 0,
+                0 if _looks_like_initials(given) else 1,
+                len(given),
+                len(v),
+            )
+            scored.append((score, v))
 
-        shown = shown[(shown != "") & (~shown.str.lower().isin(["nan", "none"]))]
-        if shown.empty:
+        best_original = sorted(scored, key=lambda x: x[0], reverse=True)[0][1]
+
+        if fmt == "initials":
+            shown = author_to_initials(best_original)
+        else:
+            shown = author_to_full(best_original)
+
+        shown = str(shown).strip()
+        if not shown or shown.lower() in {"nan", "none"}:
             return ""
 
-        # usar la variante más frecuente; empate -> la más larga
-        vc = shown.value_counts()
-        top_freq = vc.iloc[0]
-        cands = vc[vc == top_freq].index.tolist()
-        return sorted(cands, key=lambda x: (len(x), x), reverse=True)[0]
+        return shown
 
     names = (
         df_auth.groupby("Autor_key")["Autor_original"]
