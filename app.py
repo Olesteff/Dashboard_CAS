@@ -210,22 +210,163 @@ def author_to_full(name: str) -> str:
         return f"{last}, {given}"
     return name.title()
 
-def build_cas_ranking(dff: pd.DataFrame, include_udd: bool, fmt: str, top_n: int,
-                      aff_col: Optional[str]) -> pd.DataFrame:
-    if not aff_col or aff_col not in dff.columns:
-        return pd.DataFrame()
-    lists = dff[aff_col].apply(lambda s: extract_cas_authors_list(s, include_udd))
-    if lists.map(len).sum() == 0:
-        return pd.DataFrame()
-    ser = lists.explode().dropna().astype(str).str.strip()
-    if fmt == "initials":
-        ser = ser.map(author_to_initials)
+
+
+def canon_author(name: str) -> str:
+    name = str(name).strip()
+    if not name or name.lower() in {"nan", "none"}:
+        return ""
+
+    # limpiar IDs tipo "(57188955599)"
+    name = re.sub(r"\s*\([^\)]*\)\s*$", "", name).strip()
+
+    if "," in name:
+        last, given = [p.strip() for p in name.split(",", 1)]
     else:
-        ser = ser.map(author_to_full)
-    counts = ser.value_counts().reset_index()
-    counts.columns = ["Autor", "Publicaciones"]
-    counts = counts.sort_values("Publicaciones", ascending=False).head(top_n)
-    return counts
+        parts = [p for p in re.split(r"\s+", name) if p]
+        if len(parts) >= 2:
+            last = parts[-1]
+            given = " ".join(parts[:-1])
+        else:
+            return _norm_text(name)
+
+    last_norm = _norm_text(last)
+    given_norm = _norm_text(given)
+
+    first_alpha = ""
+    for ch in given_norm:
+        if ch.isalpha():
+            first_alpha = ch
+            break
+
+    return f"{last_norm}|{first_alpha}"
+
+def _clean_author_name(name: str) -> str:
+    name = str(name).strip()
+    if not name or name.lower() in {"nan", "none"}:
+        return ""
+    name = re.sub(r"\s*\([^\)]*\)\s*$", "", name).strip()
+    name = re.sub(r"\s+", " ", name).strip(" ,;|")
+    return name
+
+def _split_author_names(raw_authors: str) -> list[str]:
+    if pd.isna(raw_authors):
+        return []
+    authors = str(raw_authors).strip()
+    if not authors or authors.lower() in {"nan", "none"}:
+        return []
+
+    if ";" in authors:
+        items = [a.strip() for a in authors.split(";") if a.strip()]
+    elif "|" in authors:
+        items = [a.strip() for a in authors.split("|") if a.strip()]
+    else:
+        items = [authors]
+
+    out = []
+    seen = set()
+    for a in items:
+        a = _clean_author_name(a)
+        if not a:
+            continue
+        k = _norm_text(a)
+        if k not in seen:
+            out.append(a)
+            seen.add(k)
+    return out
+
+def build_cas_ranking(dff: pd.DataFrame, include_udd: bool, fmt: str, top_n: int,
+                      aff_col: Optional[str], author_col: Optional[str]) -> pd.DataFrame:
+    if not aff_col or aff_col not in dff.columns or not author_col or author_col not in dff.columns:
+        return pd.DataFrame()
+
+    work = dff.copy()
+
+    # ID de publicación
+    id_col = None
+    for c in ["ID_final", "DOI", "EID", "UT", "PMID"]:
+        if c in work.columns:
+            id_col = c
+            break
+    if not id_col:
+        work["_id"] = work.index.astype(str)
+        id_col = "_id"
+
+    # Filtrar publicaciones CAS/UDD a nivel de publicación
+    mask = work[aff_col].fillna("").astype(str).apply(lambda x: _is_cas_affil(x, include_udd))
+    work = work.loc[mask].copy()
+
+    rows = []
+
+    for _, row in work.iterrows():
+        pub_id = row[id_col]
+        author_list = _split_author_names(row.get(author_col, ""))
+
+        if not author_list:
+            continue
+
+        seen_in_pub = set()
+
+        for a in author_list:
+            key = canon_author(a)
+            if not key or key in seen_in_pub:
+                continue
+
+            seen_in_pub.add(key)
+            rows.append({
+                "Autor_original": a,
+                "Autor_key": key,
+                "Pub_ID": pub_id,
+            })
+
+    if not rows:
+        return pd.DataFrame()
+
+    df_auth = pd.DataFrame(rows)
+
+    counts = (
+        df_auth.groupby("Autor_key", as_index=False)["Pub_ID"]
+        .nunique()
+        .rename(columns={"Pub_ID": "Publicaciones"})
+    )
+
+    def pick_name(series: pd.Series) -> str:
+        vals = series.dropna().astype(str).map(_clean_author_name)
+        vals = vals[(vals != "") & (~vals.str.lower().isin(["nan", "none"]))]
+        if vals.empty:
+            return ""
+
+        if fmt == "initials":
+            shown = vals.map(author_to_initials)
+        else:
+            shown = vals.map(author_to_full)
+
+        shown = shown[(shown != "") & (~shown.str.lower().isin(["nan", "none"]))]
+        if shown.empty:
+            return ""
+
+        # usar la variante más frecuente; empate -> la más larga
+        vc = shown.value_counts()
+        top_freq = vc.iloc[0]
+        cands = vc[vc == top_freq].index.tolist()
+        return sorted(cands, key=lambda x: (len(x), x), reverse=True)[0]
+
+    names = (
+        df_auth.groupby("Autor_key")["Autor_original"]
+        .apply(pick_name)
+        .reset_index(name="Autor")
+    )
+
+    result = counts.merge(names, on="Autor_key", how="left")
+    result["Autor"] = result["Autor"].fillna("").astype(str).str.strip()
+    result = result[result["Autor"] != ""].copy()
+
+    return (
+        result[["Autor", "Publicaciones"]]
+        .sort_values(["Publicaciones", "Autor"], ascending=[False, True])
+        .head(top_n)
+        .reset_index(drop=True)
+    )
 
 # =========================
 # Normalización de columnas
@@ -652,7 +793,11 @@ def main():
                 top_n = st.slider("Top N", min_value=10, max_value=100, value=50, step=5)
 
             fmt_key = "initials" if fmt_choice == "Apellido, Inicial" else "full"
-            ranking = build_cas_ranking(dff, include_udd, fmt_key, top_n, aff_col)
+            author_col = _first_col(dff, [
+                "Author full names", "Author Full Names",
+                "Authors", "Author Names", "Author", "Author(s)"
+            ])
+            ranking = build_cas_ranking(dff, include_udd, fmt_key, top_n, aff_col, author_col)
 
             if ranking.empty:
                 st.info("No se detectaron autores CAS en el subconjunto filtrado.")
