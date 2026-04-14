@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from io import BytesIO
 from pathlib import Path
 from typing import Optional, List, Iterable
 
@@ -701,7 +702,7 @@ def main():
     tabs = st.tabs([
         "📅 Publicaciones", "📊 Cuartiles", "🔓 Open Access",
         "🏥 Departamentos", "📑 Revistas", "👥 Autores",
-        "☁️ Wordcloud", "📖 Citas"
+        "📋 Listado preliminar", "☁️ Wordcloud", "📖 Citas"
     ])
 
     # --- Publicaciones
@@ -893,13 +894,111 @@ def main():
                     mime="text/csv"
                 )
 
-    # --- Wordcloud
+
+    # --- Listado preliminar
     with tabs[6]:
-        st.subheader("☁️ Wordcloud (Keywords)")
+        st.subheader("📋 Listado preliminar de publicaciones")
+
+        basic_candidates = [
+            "Title", "Journal_display", "Source title", "Year", "DOI",
+            "Authors", "Author full names", "Author Full Names",
+            "Quartile", "Journal Impact Factor", "Departamento",
+            "Cited by", "Times Cited"
+        ]
+
+        selected_cols = [c for c in basic_candidates if c in dff.columns]
+
+        # Asegurar algunas columnas derivadas útiles si existen
+        display_df = dff[selected_cols].copy() if selected_cols else dff.copy()
+
+        if "OpenAccess_flag" in display_df.columns:
+            display_df["OpenAccess_flag"] = display_df["OpenAccess_flag"].map(
+                {True: "Open Access", False: "Closed"}
+            ).fillna("Closed")
+
+        rename_map = {
+            "Title": "Título",
+            "Journal_display": "Revista",
+            "Source title": "Journal",
+            "Year": "Año",
+            "DOI": "DOI",
+            "Authors": "Autores",
+            "Author full names": "Autores_nombre_completo",
+            "Author Full Names": "Autores_nombre_completo_2",
+            "Quartile": "Cuartil",
+            "Journal Impact Factor": "JIF",
+            "Departamento": "Departamento",
+            "Cited by": "Citas_scopus",
+            "Times Cited": "Citas_wos"
+        }
+        display_df = display_df.rename(columns={k: v for k, v in rename_map.items() if k in display_df.columns})
+
+        # Asegurar nombres únicos para Streamlit / PyArrow
+        cols = pd.Index(display_df.columns)
+        if cols.duplicated().any():
+            counts = {}
+            new_cols = []
+            for c in cols:
+                if c not in counts:
+                    counts[c] = 0
+                    new_cols.append(c)
+                else:
+                    counts[c] += 1
+                    new_cols.append(f"{c}_{counts[c]}")
+            display_df.columns = new_cols
+
+
+        preferred_display_cols = [
+            "Título", "Journal", "Año", "DOI", "Autores",
+            "Cuartil", "JIF", "Departamento", "Citas_scopus"
+        ]
+        final_cols = [c for c in preferred_display_cols if c in display_df.columns]
+        if final_cols:
+            display_df = display_df[final_cols].copy()
+
+        st.caption(f"Mostrando {len(display_df)} publicaciones del subconjunto filtrado.")
+        display_df = display_df.reset_index(drop=True)
+        display_df.index = display_df.index + 1
+        st.dataframe(display_df, use_container_width=True, height=500)
+
+        csv_bytes = display_df.to_csv(index=False).encode("utf-8-sig")
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            display_df.to_excel(writer, index=False, sheet_name="Listado_preliminar")
+        excel_bytes = excel_buffer.getvalue()
+
+        col_dl1, col_dl2 = st.columns(2)
+        with col_dl1:
+            st.download_button(
+                "⬇️ Descargar listado (CSV)",
+                data=csv_bytes,
+                file_name="listado_preliminar_publicaciones.csv",
+                mime="text/csv"
+            )
+        with col_dl2:
+            st.download_button(
+                "⬇️ Descargar listado (Excel)",
+                data=excel_bytes,
+                file_name="listado_preliminar_publicaciones.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    # --- Wordcloud
+    with tabs[7]:
+        st.subheader("☁️ Wordcloud")
         try:
             from wordcloud import WordCloud, STOPWORDS
             import matplotlib.pyplot as plt
 
+            custom_stop = set(STOPWORDS)
+            custom_stop.update([
+                "el","la","los","las","un","una","unos","unas","de","del","y","en",
+                "por","para","con","the","a","an","of","for","to","with","on","at",
+                "by","from","they","their","this","that","these","those"
+            ])
+
+            # --- Wordcloud desde keywords
+            st.markdown("**Keywords**")
             kw_cols = [
                 "Author Keywords", "Author keywords", "Author Keywords Plus",
                 "Keywords", "Indexed Keywords", "Index Keywords",
@@ -911,30 +1010,45 @@ def main():
                     kws.append(dff[c].dropna().astype(str))
             if kws:
                 kw_text = " ; ".join(pd.concat(kws).tolist())
+                if kw_text.strip():
+                    wc_kw = WordCloud(
+                        width=1200, height=500, background_color="white",
+                        stopwords=custom_stop
+                    ).generate(kw_text)
+                    fig_kw, ax_kw = plt.subplots(figsize=(10, 4))
+                    ax_kw.imshow(wc_kw, interpolation="bilinear")
+                    ax_kw.axis("off")
+                    st.pyplot(fig_kw, use_container_width=True, clear_figure=True)
+                else:
+                    st.info("No hay keywords para construir la nube.")
             else:
-                kw_text = " ".join(dff["Title"].dropna().astype(str).tolist())
+                st.info("No se encontraron columnas de keywords en este dataset.")
 
-            if kw_text.strip():
-                custom_stop = set(STOPWORDS)
-                custom_stop.update([
-                    "el","la","los","las","un","una","unos","unas","de","del","y","en",
-                    "por","para","con","the","a","an","of","for","to","with","on","at",
-                    "by","from","they","their","this","that","these","those"
-                ])
-                wc = WordCloud(width=1200, height=500, background_color="white",
-                               stopwords=custom_stop).generate(kw_text)
-                fig, ax = plt.subplots(figsize=(10, 4))
-                ax.imshow(wc, interpolation="bilinear")
-                ax.axis("off")
-                st.pyplot(fig, use_container_width=True, clear_figure=True)
+            st.markdown("---")
+
+            # --- Wordcloud desde títulos
+            st.markdown("**Títulos**")
+            if "Title" in dff.columns:
+                title_text = " ".join(dff["Title"].dropna().astype(str).tolist())
+                if title_text.strip():
+                    wc_title = WordCloud(
+                        width=1200, height=500, background_color="white",
+                        stopwords=custom_stop
+                    ).generate(title_text)
+                    fig_title, ax_title = plt.subplots(figsize=(10, 4))
+                    ax_title.imshow(wc_title, interpolation="bilinear")
+                    ax_title.axis("off")
+                    st.pyplot(fig_title, use_container_width=True, clear_figure=True)
+                else:
+                    st.info("No hay títulos para construir la nube.")
             else:
-                st.info("No hay palabras clave para construir la nube.")
+                st.info("No se encontró la columna 'Title' para construir la nube.")
         except Exception as e:
-            st.info(f"Instala la librería `wordcloud` para ver esta sección: `pip install wordcloud`")
+            st.info("Instala la librería `wordcloud` para ver esta sección: `pip install wordcloud`")
             st.info(f"Error: {e}")
 
     # --- Citas por año
-    with tabs[7]:
+    with tabs[8]:
         st.subheader("📖 Citas por año")
         if citas_col and not total_citas.empty and (total_citas > 0).any():
             dff_tmp = dff.copy()
