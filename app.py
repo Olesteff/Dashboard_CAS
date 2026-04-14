@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from io import BytesIO
 from pathlib import Path
+from datetime import datetime
 from typing import Optional, List, Iterable
 
 import numpy as np
@@ -732,8 +733,9 @@ def main():
 
         st.subheader("📈 Suma JIF por año")
         j = dff.copy()
+        current_year = datetime.now().year
         j["Year_int"] = pd.to_numeric(j["Year"], errors="coerce").astype("Int64")
-        j = j[j["Year_int"].notna() & (j["Year_int"] <= 2025)]
+        j = j[j["Year_int"].notna() & (j["Year_int"] <= current_year)]
         if not j.empty:
             jj = (
                 j.groupby("Year_int")["Journal Impact Factor"]
@@ -742,7 +744,7 @@ def main():
                  .rename(columns={"Year_int": "Year", "Journal Impact Factor": "Suma JIF"})
             )
             y_min = int(jj["Year"].min())
-            full_years = pd.DataFrame({"Year": range(y_min, 2025 + 1)})
+            full_years = pd.DataFrame({"Year": range(y_min, current_year + 1)})
             jj = full_years.merge(jj, on="Year", how="left").fillna({"Suma JIF": 0})
             jj["Suma JIF"] = jj["Suma JIF"].round(1)
 
@@ -751,12 +753,12 @@ def main():
             fig.update_layout(
                 margin=dict(l=10, r=10, t=50, b=10),
                 font=dict(size=10),
-                xaxis=dict(title="Año", dtick=1),
+                xaxis=dict(title="Año", dtick=1, range=[y_min, current_year]),
                 yaxis=dict(title="Suma JIF"),
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("No hay datos con año válido (≤ 2025) para el gráfico de JIF.")
+            st.info(f"No hay datos con año válido (≤ {current_year}) para el gráfico de JIF.")
 
     # --- Cuartiles
     with tabs[1]:
