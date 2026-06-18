@@ -142,62 +142,100 @@ _COUNTRY_ALIASES: dict = {
 }
 
 
+_FMED_UDD = "Facultad de Medicina Clínica Alemana - Universidad del Desarrollo"
+
+# Investigadores ICIM/Facultad de Medicina UDD conocidos — se ocultan del ranking cuando include_udd=False
+_ICIM_AUTHOR_NAMES: List[str] = [
+    "Anderson, Craig",
+    "Cabieses, Baltica",
+    "Vial, Cecilia",
+    "Delfino, Carlos",
+    "Ezquer, Fernando",
+    "Ezquer, Marcelo",
+    "Valdés, Erick",
+    "Valdes, Erick",
+    "Encina, Gonzalo",
+    "Alfaro, Ivan",
+    "Alfaro, Iván",
+    "Beca, Juan Pablo",
+    "Hormazabal, Juan",
+    "Allende, Maria Ignacia",
+    "Allende, María Ignacia",
+    "Fernandez, Mauricio",
+    "Fernández, Mauricio",
+    "Retamal, Mauricio",
+    "Markkula, Niina",
+    "Campodonico, Paola",
+    "Campodónico, Paola",
+]
+_ICIM_CANON_KEYS: set = set()  # poblado después de definir canon_author
+
 # Reglas de detección de departamento — nombres oficiales CAS (MMCAS 2026)
 # Orden importa: ICIM-UDD va ANTES que keywords clínicos
 _DEPT_RULES: List[tuple] = [
     # ── ICIM-UDD ─────────────────────────────────────────────
-    ("instituto de ciencias",         "ICIM-UDD"),
-    ("icim",                          "ICIM-UDD"),
-    ("centro de bioetica",            "ICIM-UDD"),
-    ("bioetica",                      "ICIM-UDD"),
-    ("bioethics",                     "ICIM-UDD"),
-    ("centro de epidemiologia",       "ICIM-UDD"),
-    ("centro de genetica",            "ICIM-UDD"),
-    ("center for genetics",           "ICIM-UDD"),
-    ("center for human genetics",     "ICIM-UDD"),
-    ("genetica humana",               "ICIM-UDD"),
-    ("human genetics",                "ICIM-UDD"),
-    ("genomica",                      "ICIM-UDD"),
-    ("genomics",                      "ICIM-UDD"),
-    ("neurocics",                     "ICIM-UDD"),
-    ("complejidad social",            "ICIM-UDD"),
-    ("centro de salud global",        "ICIM-UDD"),
-    ("salud global",                  "ICIM-UDD"),
-    ("global health",                 "ICIM-UDD"),
-    ("epidemiologia",                 "ICIM-UDD"),
-    ("epidemiology",                  "ICIM-UDD"),
-    ("politicas de salud",            "ICIM-UDD"),
-    ("health policy",                 "ICIM-UDD"),
-    ("salud publica",                 "ICIM-UDD"),
-    ("public health",                 "ICIM-UDD"),
+    ("instituto de ciencias",         _FMED_UDD),
+    ("icim",                          _FMED_UDD),
+    ("centro de bioetica",            _FMED_UDD),
+    ("bioetica",                      _FMED_UDD),
+    ("bioethics",                     _FMED_UDD),
+    ("centro de epidemiologia",       _FMED_UDD),
+    ("centro de genetica",            _FMED_UDD),
+    ("center for genetics",           _FMED_UDD),
+    ("center for human genetics",     _FMED_UDD),
+    ("genetica humana",               _FMED_UDD),
+    ("human genetics",                _FMED_UDD),
+    ("genomica",                      _FMED_UDD),
+    ("genomics",                      _FMED_UDD),
+    ("neurocics",                     _FMED_UDD),
+    ("complejidad social",            _FMED_UDD),
+    ("centro de salud global",        _FMED_UDD),
+    ("salud global",                  _FMED_UDD),
+    ("global health",                 _FMED_UDD),
+    ("epidemiologia",                 _FMED_UDD),
+    ("epidemiology",                  _FMED_UDD),
+    ("politicas de salud",            _FMED_UDD),
+    ("health policy",                 _FMED_UDD),
+    ("salud publica",                 _FMED_UDD),
+    ("public health",                 _FMED_UDD),
     ("neuropsicolog",                 "Departamento de Neurología y Salud Mental"),
     ("neuropsycholog",                "Departamento de Neurología y Salud Mental"),
-    ("psicolog",                      "ICIM-UDD"),
-    ("psychology",                    "ICIM-UDD"),
-    ("medicina regenerativa",         "ICIM-UDD"),
-    ("regenerative medicine",         "ICIM-UDD"),
-    ("fisiologia celular",            "ICIM-UDD"),
-    ("cellular physiology",           "ICIM-UDD"),
-    ("quimica medica",                "ICIM-UDD"),
-    ("medical chemistry",             "ICIM-UDD"),
-    ("comunicacion celular",          "ICIM-UDD"),
-    ("cellular communication",        "ICIM-UDD"),
-    ("estudios sociales en salud",    "ICIM-UDD"),
-    ("investigacion y ensayos",       "ICIM-UDD"),
-    ("programa de estudios",          "ICIM-UDD"),
-    ("cancer prevention",             "ICIM-UDD"),
-    ("data science",                  "ICIM-UDD"),
-    ("kinesiolog",                    "ICIM-UDD"),
-    ("kinesiology",                   "ICIM-UDD"),
-    ("physiotherapy",                 "ICIM-UDD"),
-    ("physical therapy",              "ICIM-UDD"),
-    ("school of physical",            "ICIM-UDD"),
+    ("psicolog",                      _FMED_UDD),
+    ("psychology",                    _FMED_UDD),
+    ("medicina regenerativa",         _FMED_UDD),
+    ("regenerative medicine",         _FMED_UDD),
+    ("fisiologia celular",            _FMED_UDD),
+    ("cellular physiology",           _FMED_UDD),
+    ("quimica medica",                _FMED_UDD),
+    ("medical chemistry",             _FMED_UDD),
+    ("comunicacion celular",          _FMED_UDD),
+    ("cellular communication",        _FMED_UDD),
+    ("estudios sociales en salud",    _FMED_UDD),
+    ("investigacion y ensayos",       _FMED_UDD),
+    ("programa de estudios",          _FMED_UDD),
+    ("cancer prevention",             _FMED_UDD),
+    ("data science",                  _FMED_UDD),
+    ("kinesiolog",                    _FMED_UDD),
+    ("kinesiology",                   _FMED_UDD),
+    ("physiotherapy",                 _FMED_UDD),
+    ("physical therapy",              _FMED_UDD),
+    ("school of physical",            _FMED_UDD),
     # ── Departamentos CAS (nombres oficiales MMCAS 2026) ─────
-    ("neurolog",          "Departamento de Neurología y Salud Mental"),
-    ("psiquiatr",         "Departamento de Neurología y Salud Mental"),
-    ("psychiatr",         "Departamento de Neurología y Salud Mental"),
-    ("salud mental",      "Departamento de Neurología y Salud Mental"),
-    ("mental health",     "Departamento de Neurología y Salud Mental"),
+    ("neurolog",               "Departamento de Neurología y Salud Mental"),
+    ("psiquiatr",              "Departamento de Neurología y Salud Mental"),
+    ("psychiatr",              "Departamento de Neurología y Salud Mental"),
+    ("salud mental",           "Departamento de Neurología y Salud Mental"),
+    ("mental health",          "Departamento de Neurología y Salud Mental"),
+    ("stroke",                 "Departamento de Neurología y Salud Mental"),
+    ("ictus",                  "Departamento de Neurología y Salud Mental"),
+    ("cerebrovascul",          "Departamento de Neurología y Salud Mental"),
+    ("demencia",               "Departamento de Neurología y Salud Mental"),
+    ("dementia",               "Departamento de Neurología y Salud Mental"),
+    ("epilep",                 "Departamento de Neurología y Salud Mental"),
+    ("esclerosis multiple",    "Departamento de Neurología y Salud Mental"),
+    ("multiple sclerosis",     "Departamento de Neurología y Salud Mental"),
+    ("parkinson",              "Departamento de Neurología y Salud Mental"),
+    ("alzheimer",              "Departamento de Neurología y Salud Mental"),
     ("oncolog",           "Departamento de Oncología"),
     ("radioterapia",      "Departamento de Oncología"),
     ("radiotherapy",      "Departamento de Oncología"),
@@ -219,8 +257,6 @@ _DEPT_RULES: List[tuple] = [
     ("nuclear medicine",  "Departamento de Imágenes"),
     ("medicina interna",  "Departamento de Medicina Interna"),
     ("internal medicine", "Departamento de Medicina Interna"),
-    ("departamento de medicina", "Departamento de Medicina Interna"),
-    ("department of medicine",   "Departamento de Medicina Interna"),
     ("gastroenterol",     "Departamento de Medicina Interna"),
     ("endocrinol",        "Departamento de Medicina Interna"),
     ("reumatol",          "Departamento de Medicina Interna"),
@@ -228,16 +264,10 @@ _DEPT_RULES: List[tuple] = [
     ("infectol",          "Departamento de Medicina Interna"),
     ("neumol",            "Departamento de Medicina Interna"),
     ("pulmonol",          "Departamento de Medicina Interna"),
+    ("broncopulmon",      "Departamento de Medicina Interna"),
     ("hematol",           "Departamento de Medicina Interna"),
+    ("haematol",          "Departamento de Medicina Interna"),
     ("geriatr",           "Departamento de Medicina Interna"),
-    ("nutricion",         "Departamento de Medicina Interna"),
-    ("nutrition",         "Departamento de Medicina Interna"),
-    ("rehabilitacion",    "Departamento de Medicina Interna"),
-    ("rehabilitation",    "Departamento de Medicina Interna"),
-    ("medicina fisica",   "Departamento de Medicina Interna"),
-    ("physical medicine", "Departamento de Medicina Interna"),
-    ("fisiatria",         "Departamento de Medicina Interna"),
-    ("physiatry",         "Departamento de Medicina Interna"),
     ("trasplante",        "Departamento de Medicina Interna"),
     ("transplant",        "Departamento de Medicina Interna"),
     ("obesidad",          "Departamento de Medicina Interna"),
@@ -245,6 +275,13 @@ _DEPT_RULES: List[tuple] = [
     ("diabetes",          "Departamento de Medicina Interna"),
     ("inmunol",           "Departamento de Medicina Interna"),
     ("immunol",           "Departamento de Medicina Interna"),
+
+    ("rehabilitacion",    "Departamento de Medicina Física y Rehabilitación"),
+    ("rehabilitation",    "Departamento de Medicina Física y Rehabilitación"),
+    ("medicina fisica",   "Departamento de Medicina Física y Rehabilitación"),
+    ("physical medicine", "Departamento de Medicina Física y Rehabilitación"),
+    ("fisiatria",         "Departamento de Medicina Física y Rehabilitación"),
+    ("physiatry",         "Departamento de Medicina Física y Rehabilitación"),
     ("cardiol",                       "Departamento de Enfermedades Cardiovasculares"),
     ("cardiovascul",                  "Departamento de Enfermedades Cardiovasculares"),
     ("enfermedades cardiovasculares", "Departamento de Enfermedades Cardiovasculares"),
@@ -260,17 +297,17 @@ _DEPT_RULES: List[tuple] = [
     ("anatomia patol",    "Departamento de Laboratorio, Banco de Sangre y Anatomía Patológica"),
     ("servicio de anatomia", "Departamento de Laboratorio, Banco de Sangre y Anatomía Patológica"),
     ("patholog",          "Departamento de Laboratorio, Banco de Sangre y Anatomía Patológica"),
-    # "laboratorio" y "laboratory" al final como fallback
-    ("laboratorio",       "Departamento de Laboratorio, Banco de Sangre y Anatomía Patológica"),
-    ("laboratory",        "Departamento de Laboratorio, Banco de Sangre y Anatomía Patológica"),
+    # Solo "laboratorio clinico" es inequívoco; "laboratorio" solo es demasiado genérico
     ("paciente critico",       "Departamento de Paciente Crítico"),
     ("critical care",          "Departamento de Paciente Crítico"),
     ("critical patient",       "Departamento de Paciente Crítico"),
     ("cuidados intensivos",    "Departamento de Paciente Crítico"),
     ("intensive care",         "Departamento de Paciente Crítico"),
     ("unidad de tratamiento intensivo", "Departamento de Paciente Crítico"),
+    ("department of nursing",   "Servicio de Enfermería"),
+    ("servicio de enfermeria",  "Servicio de Enfermería"),
+    ("nursing department",      "Servicio de Enfermería"),
     ("cirug",       "Departamento de Cirugía"),
-    ("surgery",     "Departamento de Cirugía"),
     ("dermatol",    "Departamento de Cirugía"),
     ("urolog",      "Departamento de Cirugía"),
     ("urology",     "Departamento de Cirugía"),
@@ -285,27 +322,156 @@ _DEPT_RULES: List[tuple] = [
     ("dentist",     "Servicio de Odontología"),
     ("dental",      "Servicio de Odontología"),
     ("odont",       "Servicio de Odontología"),
+    ("desarrollo academico",          "Departamento de Desarrollo Academico e Investigacion"),
+    ("academic development",          "Departamento de Desarrollo Academico e Investigacion"),
+    ("research and academic",         "Departamento de Desarrollo Academico e Investigacion"),
 ]
 
 
+def _dept_match(kw: str, t: str) -> bool:
+    """Comprueba si el keyword aparece con word boundary en el texto normalizado."""
+    return bool(re.search(r'\b' + re.escape(kw), t))
+
+
 def detect_department(affiliation: str) -> str:
+    """Retorna el primer departamento que hace match (usado en inferencia)."""
     if not isinstance(affiliation, str):
         return "Sin depto. especificado"
     t = _norm_text(affiliation)
     for kw, dep in _DEPT_RULES:
-        if kw in t:
+        if _dept_match(kw, t):
             return dep
     return "Sin depto. especificado"
 
 
-def get_cas_departments(affil_str: str, include_udd: bool = True) -> List[str]:
+_MI = "Departamento de Medicina Interna"
+
+def detect_departments_all(affiliation: str) -> List[str]:
+    """Retorna TODOS los departamentos que hacen match en un segmento.
+
+    Medicina Interna se usa solo como fallback: si el segmento ya
+    tiene un depto. más específico (ej. Neurología, Cardiología) se
+    omite, porque en CAS muchos servicios son subespecialidades dentro
+    del Dpto. de Medicina Interna pero se reportan por separado.
+    """
+    if not isinstance(affiliation, str):
+        return []
+    t = _norm_text(affiliation)
+    seen: set = set()
+    result: List[str] = []
+    for kw, dep in _DEPT_RULES:
+        if _dept_match(kw, t) and dep not in seen:
+            seen.add(dep)
+            result.append(dep)
+    specific = [d for d in result if d != _MI]
+    return specific if specific else result
+
+
+def get_cas_departments(
+    affil_str: str,
+    include_udd: bool = True,
+    name_to_sid: Optional[dict] = None,
+    scopus_dept_map: Optional[dict] = None,
+) -> List[str]:
+    """Detecta departamentos CAS para una fila del dataset.
+
+    Jerarquía de fuentes:
+      1. Mapa MMCAS (departamento oficial del médico)
+      2. Mapa Scopus ID (inferido de papers donde el mismo autor
+         declaró su departamento explícitamente)
+      3. Detección por palabras clave en el texto de afiliación
+    """
     deps: set = set()
     for seg in _chunk_authors_with_affils(affil_str):
         if not _is_cas_affil(seg, include_udd):
             continue
-        dep = detect_department(seg)
-        deps.add(dep)
-    return sorted(deps) if deps else ["Sin depto. especificado"]
+        name_part = seg.split(",")[0].strip()
+        key = canon_author(name_part)
+
+        is_udd_only = not _is_cas_affil(seg, include_udd=False)
+
+        # 1. Keywords — lo que el autor declara en "Authors with affiliations"
+        kw_depts = detect_departments_all(seg)
+        if is_udd_only:
+            specific_kw = [d for d in kw_depts if d not in {_MI, _FMED_UDD, "Sin depto. especificado"}]
+            if specific_kw:
+                for dep in specific_kw:
+                    deps.add(dep)
+                continue
+            # Sin depto específico → Facultad UDD por defecto (ver fallback abajo)
+        else:
+            # Autor CAS con departamento declarado explícitamente en el paper
+            declared = [d for d in kw_depts if d != "Sin depto. especificado"]
+            if declared:
+                for dep in declared:
+                    deps.add(dep)
+                continue
+            # Sin info de departamento en este paper → usar recurrencia/MMCAS
+
+        # 2. Scopus ID — recurrencia: qué declaró este autor en otros papers
+        if name_to_sid and scopus_dept_map and key:
+            sid = name_to_sid.get(key)
+            if sid and sid in scopus_dept_map:
+                deps.add(scopus_dept_map[sid])
+                continue
+
+        # 3. Fallback final
+        if is_udd_only:
+            deps.add(_FMED_UDD)
+        else:
+            for dep in kw_depts:
+                deps.add(dep)
+
+    result = sorted(d for d in deps if d != "Sin depto. especificado")
+    return result if result else ["Sin depto. especificado"]
+
+
+def build_scopus_dept_map(
+    affil_series: tuple,
+    authors_series: tuple,
+    ids_series: tuple,
+) -> dict:
+    """Construye {scopus_id: departamento} desde los propios papers.
+
+    Para cada autor CAS cuyo departamento es detectable (vía MMCAS o
+    keywords), registra un voto. Al final asigna el departamento más
+    frecuente por ID.
+    """
+    from collections import Counter as _Counter
+    votes: dict = {}  # sid → Counter
+
+    for affil_str, authors_raw, ids_raw in zip(affil_series, authors_series, ids_series):
+        if not isinstance(authors_raw, str) or not isinstance(ids_raw, str):
+            continue
+        names = [n.strip() for n in authors_raw.split(";")]
+        ids   = [i.strip() for i in ids_raw.split(";")]
+        if len(names) != len(ids):
+            continue
+        name_to_sid = {canon_author(n): sid for n, sid in zip(names, ids) if sid and sid != "nan"}
+
+        for seg in _chunk_authors_with_affils(str(affil_str)):
+            if not _is_cas_affil(seg, include_udd=True):
+                continue
+            name_part = seg.split(",")[0].strip()
+            key = canon_author(name_part)
+            sid = name_to_sid.get(key) if key else None
+            if not sid:
+                continue
+
+            # Determinar departamento (MMCAS o keywords)
+            dept = None
+            if key in _MMCAS_DEPT_MAP:
+                dept = _MMCAS_DEPT_MAP[key][0]
+            else:
+                depts = detect_departments_all(seg)
+                if depts and depts[0] != "Sin depto. especificado":
+                    dept = depts[0]
+            if dept:
+                if sid not in votes:
+                    votes[sid] = _Counter()
+                votes[sid][dept] += 1
+
+    return {sid: ctr.most_common(1)[0][0] for sid, ctr in votes.items()}
 
 
 def detect_clinical_trial(row: pd.Series) -> bool:
@@ -323,11 +489,11 @@ def detect_clinical_trial(row: pd.Series) -> bool:
 
 def _is_cas_affil(text: str, include_udd: bool) -> bool:
     t = _norm_text(text)
-    cas_hits = ["clinica alemana", "alemana clinic"]
+    cas_hits = ["clinica alemana", "alemana clinic", "clin alemana"]
     udd_hits: List[str] = []
     if include_udd:
         udd_hits = [
-            "universidad del desarrollo", "udd",
+            "universidad del desarrollo", "univ desarrollo", " udd",
             "facultad de medicina clinica alemana",
             "instituto de ciencias e innovacion en medicina",
             "icim", "cegen",
@@ -443,6 +609,88 @@ def canon_author(name: str) -> str:
     return f"{last_norm}|{first_alpha}"
 
 
+_ICIM_CANON_KEYS = {canon_author(n) for n in _ICIM_AUTHOR_NAMES}
+
+
+_MMCAS_NON_CLINICAL: set = {
+    "Departamento de Auditoría Médica",
+    "Departamento de Calidad",
+    "Departamento de Desarrollo Academico e Investigacion",
+    "Dirección Médica",
+    "Gerencia de Personas",
+    "Gerencia de Tecnología",
+    "Subgerencia Bienestar y Calidad de Vida",
+}
+
+
+def _build_mmcas_dept_map() -> dict:
+    """Carga MMCAS_2026.xlsx y devuelve {canon_key: [departamentos clínicos]}."""
+    import os
+    _DEPT_NAME_NORM = {
+        "Departamento de Urgencias": "Departamento de Urgencia General",
+        "Subgerencia de Bienestar y Calidad de Vida": "Subgerencia Bienestar y Calidad de Vida",
+    }
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "MMCAS_2026.xlsx"),
+        os.path.join(os.path.dirname(__file__), "MMCAS.xlsx"),
+        os.path.expanduser("~/Desktop/MMCAS_2026.xlsx"),
+        os.path.expanduser("~/Desktop/MMCAS.xlsx"),
+    ]
+    path = next((p for p in candidates if os.path.exists(p)), None)
+    if path is None:
+        return {}
+    try:
+        xl = pd.ExcelFile(path)
+        frames = [xl.parse(sh) for sh in xl.sheet_names]
+        mmcas = pd.concat(frames, ignore_index=True)
+    except Exception:
+        return {}
+    dept_cols = [c for c in mmcas.columns if "DEPARTAMENTO" in c]
+    full_map: dict = {}   # apellido compuesto → depto (siempre único)
+    short_map: dict = {}  # primer apellido → depto (puede colisionar)
+    short_collision: set = set()  # claves cortas ambiguas → no usar
+
+    for _, row in mmcas.iterrows():
+        nombre = str(row.get("NOMBRE", "")).strip()
+        if not nombre:
+            continue
+        # DEPARTAMENTO 1; si es no-clínico, buscar el primero clínico
+        all_depts = [
+            _DEPT_NAME_NORM.get(str(row[c]).strip(), str(row[c]).strip())
+            for c in dept_cols
+            if pd.notna(row[c]) and str(row[c]).strip() not in ("", "nan")
+        ]
+        dept = next(
+            (d for d in all_depts if d not in _MMCAS_NON_CLINICAL),
+            all_depts[0] if all_depts else None,
+        )
+        if not dept:
+            continue
+        depts = [dept]
+        # Clave larga (apellido compuesto) — siempre confiable
+        k_full = canon_author(nombre)
+        if k_full:
+            full_map[k_full] = depts
+        # Clave corta (solo primer apellido) — descartada si colisiona
+        if "," in nombre:
+            primer_ap = nombre.split(",")[0].strip().split()[0]
+            k_short = canon_author(f"{primer_ap}, {nombre.split(',',1)[1].strip()}")
+            if k_short and k_short != k_full:
+                if k_short in short_map and short_map[k_short] != depts:
+                    short_collision.add(k_short)
+                else:
+                    short_map[k_short] = depts
+
+    # Combinar: claves largas + claves cortas sin colisión
+    result = {**short_map, **full_map}  # full_map sobreescribe si coincide
+    for k in short_collision:
+        result.pop(k, None)
+    return result
+
+
+_MMCAS_DEPT_MAP: dict = _build_mmcas_dept_map()
+
+
 def _strip_scopus_id(name: str) -> str:
     return re.sub(r"\s*\([^)]+\)\s*$", "", name.strip()).strip()
 
@@ -463,6 +711,34 @@ def _build_fullname_lookup(dff: pd.DataFrame) -> dict:
     return lookup
 
 
+def _pure_cas_paper_ids(dff: pd.DataFrame, aff_cols: List[str], id_col: str) -> set:
+    """Retorna IDs de papers que tienen al menos un autor con afiliación
+    Clínica Alemana propiamente (excluye papers solo-ICIM/solo-UDD)."""
+    mask = _cas_mask_vectorized(dff, aff_cols, include_udd=False)
+    return set(dff.loc[mask, id_col].astype(str))
+
+
+def _clinical_dept_author_keys(dff: pd.DataFrame, aff_col: Optional[str]) -> set:
+    """Canon keys de autores que en algún paper declararon ellos mismos un
+    departamento clínico (no solo ICIM-UDD) en su segmento de afiliación."""
+    non_clinical = {_FMED_UDD, "Sin depto. especificado"}
+    keys: set = set()
+    if not aff_col or aff_col not in dff.columns:
+        return keys
+    for affil_str in dff[aff_col].fillna("").astype(str):
+        for seg in _chunk_authors_with_affils(affil_str):
+            if not _is_cas_affil(seg, include_udd=True):
+                continue
+            depts = detect_departments_all(seg)
+            # El autor tiene departamento clínico propio si algún dept no es ICIM ni sin depto
+            if any(d not in non_clinical for d in depts):
+                name_part = seg.split(",")[0].strip()
+                key = canon_author(name_part)
+                if key:
+                    keys.add(key)
+    return keys
+
+
 def build_cas_ranking(
     dff: pd.DataFrame,
     include_udd: bool,
@@ -479,15 +755,30 @@ def build_cas_ranking(
         work["_id"] = work.index.astype(str)
         id_col = "_id"
 
-    # Vectorized CAS mask — reemplaza apply() fila a fila
+    # Filtro de papers: siempre include_udd=True para no perder papers donde
+    # el autor declaró UDD en vez de "Clínica Alemana" explícitamente.
+    # include_udd solo afecta qué nombres se muestran en el ranking.
     aff_cols = [c for c in [aff_col, "Affiliations", "Addresses"] if c]
-    cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd)
+    cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd=True)
     work = work.loc[cas_mask].copy()
 
     if work.empty:
         return pd.DataFrame()
 
     auth_col = _first_col(work, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
+
+    # Canon keys de autores que tienen al menos un segmento CAS en este dataset
+    cas_author_keys: set = set()
+    if aff_col and aff_col in work.columns:
+        for affil_str in work[aff_col].fillna("").astype(str):
+            for seg in _chunk_authors_with_affils(affil_str):
+                if not _is_cas_affil(seg, include_udd):
+                    continue
+                name_part = seg.split(",")[0].strip()
+                key = canon_author(name_part)
+                if key:
+                    cas_author_keys.add(key)
+
     rows = []
     for _, row in work.iterrows():
         pub_id = row[id_col]
@@ -502,6 +793,9 @@ def build_cas_ranking(
             key = canon_author(name)
             if not key or key in seen_in_pub:
                 continue
+            # Excluir autores sin afiliación CAS (co-autores externos)
+            if cas_author_keys and key not in cas_author_keys:
+                continue
             seen_in_pub.add(key)
             display = fullname_lookup.get(key, name)
             rows.append({"Autor_original": display, "Autor_key": key, "Pub_ID": pub_id})
@@ -510,6 +804,9 @@ def build_cas_ranking(
         return pd.DataFrame()
 
     df_auth = pd.DataFrame(rows)
+
+    if df_auth.empty:
+        return pd.DataFrame()
 
     counts = (
         df_auth.groupby("Autor_key", as_index=False)["Pub_ID"]
@@ -542,6 +839,10 @@ def build_cas_ranking(
     result = counts.merge(names, on="Autor_key", how="left")
     result["Autor"] = result["Autor"].fillna("").astype(str).str.strip()
     result = result[result["Autor"] != ""].copy()
+
+    # Ocultar autores ICIM conocidos cuando include_udd=False
+    if not include_udd:
+        result = result[~result["Autor_key"].isin(_ICIM_CANON_KEYS)]
 
     return (
         result[["Autor", "Publicaciones"]]
@@ -647,14 +948,14 @@ _AREA_TO_DEPT: List[tuple] = [
     ("intensive care",    "Departamento de Paciente Crítico"),
     ("surg",              "Departamento de Cirugía"),
     ("pathol",            "Departamento de Laboratorio, Banco de Sangre y Anatomía Patológica"),
-    ("epidemiol",         "ICIM-UDD"),
-    ("public health",     "ICIM-UDD"),
-    ("global health",     "ICIM-UDD"),
-    ("genetics",          "ICIM-UDD"),
-    ("genomic",           "ICIM-UDD"),
-    ("bioethic",          "ICIM-UDD"),
-    ("kinesiol",          "ICIM-UDD"),
-    ("physiother",        "ICIM-UDD"),
+    ("epidemiol",         _FMED_UDD),
+    ("public health",     _FMED_UDD),
+    ("global health",     _FMED_UDD),
+    ("genetics",          _FMED_UDD),
+    ("genomic",           _FMED_UDD),
+    ("bioethic",          _FMED_UDD),
+    ("kinesiol",          _FMED_UDD),
+    ("physiother",        _FMED_UDD),
     ("dental",            "Servicio de Odontología"),
     ("odontol",           "Servicio de Odontología"),
 ]
@@ -721,12 +1022,18 @@ def _apply_dept_inference(
     aff_col: str,
     author_dept_lookup: dict,
     wos_col: Optional[str],
+    scopus_dept_map: Optional[dict] = None,
+    authors_col: Optional[str] = None,
+    ids_col: Optional[str] = None,
+    addresses_col: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Segunda pasada sobre filas sin departamento declarado.
-    Aplica las 3 estrategias en cascada y registra la fuente en 'Departamento_fuente'.
+    Estrategias en cascada:
+      1. Historial del autor en otros papers del dataset
+      2. Co-autores CAS del mismo paper
+      3. Scopus ID — recurrencia por ID único de autor
     """
-    # Inicializar columna de fuente para TODAS las filas
     df["Departamento_fuente"] = "declarado"
     no_dept = df["Departamentos_lista"].apply(lambda x: x == ["Sin depto. especificado"])
     df.loc[~no_dept, "Departamento_fuente"] = "declarado"
@@ -748,15 +1055,84 @@ def _apply_dept_inference(
             if key and key in author_dept_lookup:
                 return [author_dept_lookup[key]], "inferido (historial autor)"
 
-        # ── Estrategia 2: co-autores del mismo paper ──────────────────────────
-        dep2 = _infer_dept_from_coauthors(affil_str)
-        if dep2 != "Sin depto. especificado":
-            return [dep2], "inferido (co-autores)"
+        # ── Estrategia 2: Scopus ID — recurrencia por ID único ───────────────
+        if scopus_dept_map and authors_col and ids_col:
+            names = [n.strip() for n in str(row.get(authors_col, "")).split(";")]
+            ids   = [i.strip() for i in str(row.get(ids_col, "")).split(";")]
+            if len(names) == len(ids):
+                for name, sid in zip(names, ids):
+                    if not sid or sid == "nan":
+                        continue
+                    dept = scopus_dept_map.get(sid)
+                    if dept:
+                        return [dept], "inferido (Scopus ID)"
 
-        # ── Estrategia 3: área temática ───────────────────────────────────────
-        dep3 = _infer_dept_from_area(row, wos_col)
+        # ── Estrategia 3: co-autores del mismo paper ──────────────────────────
+        dep3 = _infer_dept_from_coauthors(affil_str)
         if dep3 != "Sin depto. especificado":
-            return [dep3], "inferido (área temática)"
+            return [dep3], "inferido (co-autores)"
+
+        # ── Estrategia 4: MMCAS — nómina oficial CAS ─────────────────────────
+        # Scopus format: "Apellido I.N., Institution..." → key "apellido|i"
+        # WoS format (no per-author affil): use Authors column directly
+        def _mmcas_lookup_name(raw_name: str):
+            """Genera key MMCAS desde nombre estilo Scopus 'Apellido I.N.' o 'Apellido, Nombre'."""
+            raw_name = _norm_text(raw_name.strip())
+            if "," in raw_name:
+                last, given = raw_name.split(",", 1)
+                last = last.strip().split()[0]  # primer apellido
+                initial = next((ch for ch in given.strip() if ch.isalpha()), "")
+            else:
+                parts = raw_name.split()
+                last = parts[0] if parts else ""
+                initial = next((ch for ch in parts[1] if ch.isalpha()), "") if len(parts) > 1 else ""
+            return f"{last}|{initial}" if initial else last
+
+        # Intentar con segmentos de afiliación (Scopus)
+        for seg in _chunk_authors_with_affils(affil_str):
+            if not _is_cas_affil(seg, include_udd=True):
+                continue
+            name_part = seg.split(",")[0].strip()
+            mmcas_key = _mmcas_lookup_name(name_part)
+            if mmcas_key and mmcas_key in _MMCAS_DEPT_MAP:
+                depts = _MMCAS_DEPT_MAP[mmcas_key]
+                if depts:
+                    return list(depts), "inferido (MMCAS)"
+
+        # Intentar con campo Addresses de WoS: "[Apellido, N.] Clin Alemana, Dept..."
+        if addresses_col:
+            addr_str = str(row.get(addresses_col, "")) if pd.notna(row.get(addresses_col)) else ""
+            _bracket_re = re.compile(r'\[([^\]]+)\]\s*(.+)')
+            for segment in addr_str.split(";"):
+                segment = segment.strip()
+                if not _is_cas_affil(segment, include_udd=True):
+                    continue
+                bm = _bracket_re.match(segment)
+                if not bm:
+                    continue
+                inst_part = bm.group(2)
+                # Try keyword detection on institution text first
+                kw_depts = detect_departments_all(inst_part)
+                declared = [d for d in kw_depts if d not in {"Sin depto. especificado", _MI}]
+                if declared:
+                    return [declared[0]], "inferido (WoS Addresses)"
+                # Fall back to MMCAS for each author in brackets
+                for name in bm.group(1).split(";"):
+                    mmcas_key = _mmcas_lookup_name(name.strip())
+                    if mmcas_key and mmcas_key in _MMCAS_DEPT_MAP:
+                        depts = _MMCAS_DEPT_MAP[mmcas_key]
+                        if depts:
+                            return list(depts), "inferido (MMCAS)"
+
+        # Intentar con columna Authors directamente (último recurso)
+        if authors_col:
+            authors_raw = str(row.get(authors_col, ""))
+            for name in authors_raw.split(";"):
+                mmcas_key = _mmcas_lookup_name(name.strip())
+                if mmcas_key and mmcas_key in _MMCAS_DEPT_MAP:
+                    depts = _MMCAS_DEPT_MAP[mmcas_key]
+                    if depts:
+                        return list(depts), "inferido (MMCAS)"
 
         return ["Sin depto. especificado"], "sin datos"
 
@@ -839,7 +1215,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     wos_col = _first_col(df, ["WoS Categories", "Research Areas", "Categories"])
 
     if aff_col:
-        # Pase 1: detección explícita desde afiliación declarada
+        # Pase 1: lo que el autor declara explícitamente en su afiliación
         df["Departamentos_lista"] = df[aff_col].apply(
             lambda x: get_cas_departments(str(x) if pd.notna(x) else "", include_udd=True)
         )
@@ -853,7 +1229,23 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
         # Pase 2: inferencia para los que quedaron sin departamento
         author_dept_lookup = _build_author_dept_lookup(df, aff_col)
-        df = _apply_dept_inference(df, aff_col, author_dept_lookup, wos_col)
+        authors_col = _first_col(df, ["Authors", "Author Names", "Author full names"])
+        ids_col     = _first_col(df, ["Author(s) ID", "Author IDs", "Authors ID", "Scopus Author IDs"])
+        scopus_dept_map: dict = {}
+        if authors_col and ids_col:
+            scopus_dept_map = build_scopus_dept_map(
+                tuple(df[aff_col].fillna("").astype(str)),
+                tuple(df[authors_col].fillna("").astype(str)),
+                tuple(df[ids_col].fillna("").astype(str)),
+            )
+        addresses_col = _first_col(df, ["Addresses", "Reprint Addresses"])
+        df = _apply_dept_inference(
+            df, aff_col, author_dept_lookup, wos_col,
+            scopus_dept_map=scopus_dept_map,
+            authors_col=authors_col,
+            ids_col=ids_col,
+            addresses_col=addresses_col,
+        )
     else:
         df["Departamentos_lista"] = [["Sin depto. especificado"]] * len(df)
         df["Departamento"] = "Sin depto. especificado"
@@ -1287,30 +1679,47 @@ def main():
             fuente_counts = dff["Departamento_fuente"].value_counts()
             n_declarado   = int(fuente_counts.get("declarado", 0))
             n_hist        = int(fuente_counts.get("inferido (historial autor)", 0))
+            n_scopus      = int(fuente_counts.get("inferido (Scopus ID)", 0))
             n_coautor     = int(fuente_counts.get("inferido (co-autores)", 0))
-            n_area        = int(fuente_counts.get("inferido (área temática)", 0))
+            n_wos         = int(fuente_counts.get("inferido (WoS Addresses)", 0))
+            n_mmcas       = int(fuente_counts.get("inferido (MMCAS)", 0))
             n_sin         = int(fuente_counts.get("sin datos", 0))
             n_total_dff   = len(dff)
             with st.expander("📊 Cobertura de asignación de departamento", expanded=False):
-                cc1, cc2, cc3, cc4, cc5 = st.columns(5)
-                cc1.metric("✅ Declarado",            f"{_n(n_declarado)} ({100*n_declarado/n_total_dff:.0f}%)")
-                cc2.metric("🔁 Historial autor",      f"{_n(n_hist)} ({100*n_hist/n_total_dff:.0f}%)")
-                cc3.metric("👥 Co-autores",           f"{_n(n_coautor)} ({100*n_coautor/n_total_dff:.0f}%)")
-                cc4.metric("🔬 Área temática",        f"{_n(n_area)} ({100*n_area/n_total_dff:.0f}%)")
-                cc5.metric("❓ Sin datos",             f"{_n(n_sin)} ({100*n_sin/n_total_dff:.0f}%)")
+                cols = [c for c in [
+                    ("✅ Declarado",       n_declarado),
+                    ("🔁 Historial autor", n_hist),
+                    ("🔑 Scopus ID",       n_scopus),
+                    ("👥 Co-autores",      n_coautor),
+                    ("📄 WoS",             n_wos),
+                    ("🏥 MMCAS",           n_mmcas),
+                    ("❓ Sin datos",        n_sin),
+                ] if c[1] > 0]
+                for col, (label, n) in zip(st.columns(len(cols)), cols):
+                    col.metric(label, f"{_n(n)} ({100*n/n_total_dff:.0f}%)")
                 st.caption(
                     "**Declarado**: el autor especificó su departamento en la afiliación. "
                     "**Historial autor**: inferido del mismo autor en otros papers. "
+                    "**Scopus ID**: inferido por recurrencia del ID único del autor. "
                     "**Co-autores**: inferido de los co-autores CAS del mismo paper. "
-                    "**Área temática**: inferido de las categorías WoS/Scopus del journal."
+                    "**WoS**: inferido del campo Addresses de Web of Science. "
+                    "**MMCAS**: inferido de la nómina oficial CAS."
                 )
+
+        show_icim_dept = st.checkbox(
+            "Incluir Facultad de Medicina UDD en gráficos de departamentos",
+            value=True, key="show_icim_dept_cb"
+        )
 
         dep_exploded = (
             dff[["Departamentos_lista", "Year_int"]].copy()
             .explode("Departamentos_lista")
             .rename(columns={"Departamentos_lista": "Departamento"})
         )
-        dep_exploded = dep_exploded[dep_exploded["Departamento"] != "Sin depto. especificado"]
+        _dept_exclude = {"Sin depto. especificado"}
+        if not show_icim_dept:
+            _dept_exclude.add(_FMED_UDD)
+        dep_exploded = dep_exploded[~dep_exploded["Departamento"].isin(_dept_exclude)]
 
         dep = dep_exploded["Departamento"].value_counts().reset_index()
         dep.columns = ["Departamento", "Publicaciones"]
@@ -1331,40 +1740,6 @@ def main():
             st.plotly_chart(fig, use_container_width=True)
             _report_figs.append(fig)
 
-            # % de papers con participación de cada depto
-            st.subheader("📊 % de publicaciones con participación de cada departamento")
-            st.caption(
-                f"Sobre {_n(len(dff))} publicaciones únicas. "
-                "Un paper con autores de 3 deptos. suma 1 en cada → los % pueden superar 100%."
-            )
-            total_papers = len(dff)
-            dept_paper_counts = {
-                d: int(dff["Departamentos_lista"].apply(lambda lst: d in lst).sum())
-                for d in dep["Departamento"].tolist()
-            }
-            dep_pct = (
-                pd.DataFrame(list(dept_paper_counts.items()), columns=["Departamento", "Papers"])
-                .assign(Porcentaje=lambda d: (d["Papers"] / total_papers * 100).round(1))
-                .sort_values("Porcentaje", ascending=True)
-            )
-            dep_pct["Depto_corto"] = dep_pct["Departamento"].map(_short_dept)
-            fig_pct = px.bar(
-                dep_pct, x="Porcentaje", y="Depto_corto", orientation="h",
-                title="% de publicaciones con participación de cada departamento",
-                text=dep_pct.apply(lambda r: f"{r['Porcentaje']}% ({r['Papers']})", axis=1),
-                color="Porcentaje", color_continuous_scale="Blues",
-            )
-            fig_pct.update_traces(textposition="inside", insidetextanchor="start")
-            fig_pct.update_layout(
-                xaxis=dict(title="% del total de publicaciones", range=[0, 105]),
-                yaxis=dict(categoryorder="total ascending", title=""),
-                coloraxis_showscale=False,
-                margin=dict(l=220, r=10, t=50, b=10),
-                height=max(400, 40 * len(dep_pct) + 100), font=dict(size=11),
-            )
-            st.plotly_chart(fig_pct, use_container_width=True)
-            _report_figs.append(fig_pct)
-
             # Evolución por depto y año
             st.subheader("📈 Evolución por departamento y año")
             dep_yr = dep_exploded[dep_exploded["Year_int"].notna()].copy()
@@ -1373,8 +1748,10 @@ def main():
                 dep_yr_top = dep_yr[dep_yr["Departamento"].isin(top_deps)].copy()
                 dep_yr_top["Depto_corto"] = dep_yr_top["Departamento"].map(_short_dept)
                 pivot_dep = dep_yr_top.groupby(["Year_int", "Depto_corto"]).size().reset_index(name="n")
+                legend_order = [_short_dept(d) for d in top_deps]
                 fig2 = px.line(pivot_dep, x="Year_int", y="n", color="Depto_corto",
-                               markers=True, title="Top 8 departamentos por año")
+                               markers=True, title="Top 8 departamentos por año",
+                               category_orders={"Depto_corto": legend_order})
                 fig2.update_layout(xaxis=dict(dtick=1, title="Año"),
                                    yaxis=dict(title="Publicaciones"),
                                    legend=dict(title="Departamento"),
@@ -1521,9 +1898,14 @@ def main():
             n_int_only = n_total - n_ext
 
             c1, c2, c3 = st.columns(3)
-            with c1:  st.metric("🏛️ Solo interna",           f"{_n(n_int_only)} ({_f(100*n_int_only/n_total)}%)")
-            with c2:  st.metric("🤝 Con colab. externa",      f"{_n(n_ext)} ({_f(100*n_ext/n_total)}%)")
-            with c3:  st.metric("🌍 Con colab. internacional", f"{_n(n_intl)} ({_f(100*n_intl/n_total)}%)")
+            if n_total > 0:
+                with c1:  st.metric("🏛️ Solo interna",           f"{_n(n_int_only)} ({_f(100*n_int_only/n_total)}%)")
+                with c2:  st.metric("🤝 Con colab. externa",      f"{_n(n_ext)} ({_f(100*n_ext/n_total)}%)")
+                with c3:  st.metric("🌍 Con colab. internacional", f"{_n(n_intl)} ({_f(100*n_intl/n_total)}%)")
+            else:
+                with c1:  st.metric("🏛️ Solo interna",           "—")
+                with c2:  st.metric("🤝 Con colab. externa",      "—")
+                with c3:  st.metric("🌍 Con colab. internacional", "—")
 
             n_nacional = max(0, n_ext - n_intl)
             collab_counts = pd.DataFrame({
