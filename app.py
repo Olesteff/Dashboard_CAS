@@ -77,6 +77,29 @@ _Q_COLORS = {
     "Q3": "#e67e22", "Q4": "#922b21", "Sin cuartil": "#bdc3c7",
 }
 
+# Paleta de departamentos — generada una vez al inicio del módulo.
+# Se llena dinámicamente cuando se conocen los departamentos del dataset
+# (ver _build_dept_colors). Para gráficos se usa _get_dept_color_map().
+import plotly.express as _px_palette
+_DEPT_PALETTE = _px_palette.colors.qualitative.Dark24
+_DEPT_COLORS: dict = {}  # {nombre_corto: hex}  — poblado en _build_dept_colors()
+
+
+def _build_dept_colors(dept_names: list) -> dict:
+    """Asigna colores consistentes a nombres cortos de departamentos."""
+    global _DEPT_COLORS
+    short_names = sorted(set(_short_dept(d) for d in dept_names))
+    for i, name in enumerate(short_names):
+        if name not in _DEPT_COLORS:
+            _DEPT_COLORS[name] = _DEPT_PALETTE[i % len(_DEPT_PALETTE)]
+    return _DEPT_COLORS
+
+
+def _get_dept_color_map(dept_names: list) -> dict:
+    """Devuelve {nombre_corto: color} para usar en color_discrete_map de Plotly."""
+    _build_dept_colors(dept_names)
+    return {_short_dept(d): _DEPT_COLORS[_short_dept(d)] for d in dept_names if _short_dept(d) in _DEPT_COLORS}
+
 # =========================
 # Utils base
 # =========================
@@ -1405,7 +1428,7 @@ def _prep_fig_for_export(fig: go.Figure) -> go.Figure:
     return fig
 
 
-def _generate_html_report(dff: pd.DataFrame, title: str, figs: List[go.Figure]) -> str:
+def _generate_html_report(dff: pd.DataFrame, title: str, figs: List[go.Figure], kpi_html: str = "") -> str:
     """Genera un informe HTML autónomo con todos los gráficos Plotly embebidos.
 
     Estrategia de carga de Plotly.js:
@@ -1452,6 +1475,7 @@ def _generate_html_report(dff: pd.DataFrame, title: str, figs: List[go.Figure]) 
 <body>
 <h1>📊 {title}</h1>
 <p class="meta">Generado el {now} · {_n(len(dff))} publicaciones · {len(valid_figs)} gráficos</p>
+{kpi_html}
 {charts_html}
 </body>
 </html>"""
@@ -1555,6 +1579,12 @@ def main():
         with col9:  st.metric("🤝 % Colab. externa",         _pct(dff['Colab_externa'].mean()))
         with col10: st.metric("🌍 % Colab. internacional",   _pct(dff['Colab_internacional'].mean()))
 
+    _jif_vals = dff["Journal Impact Factor"]
+    _jif_mean = float(_jif_vals[_jif_vals > 0].mean()) if (_jif_vals > 0).any() else 0.0
+    _pct_q1   = float((dff["Quartile"] == "Q1").mean()) * 100
+    _pct_oa   = float(dff["OpenAccess_flag"].mean()) * 100
+    _n_intl   = int(dff["Colab_internacional"].sum()) if "Colab_internacional" in dff.columns else 0
+
     # Lista de figuras para exportar al informe HTML
     _report_figs: List[go.Figure] = []
 
@@ -1563,7 +1593,7 @@ def main():
         "📅 Publicaciones", "📊 Cuartiles", "🔓 Open Access",
         "🏥 Departamentos", "📑 Revistas", "👥 Autores",
         "🌍 Colaboración", "🔬 Áreas Temáticas",
-        "📋 Listado", "☁️ Wordcloud", "📖 Citas",
+        "☁️ Wordcloud", "📖 Citas", "📋 Listado",
     ])
 
     # ── Tab 0: Publicaciones ──────────────────────────────────────────────────
@@ -1577,10 +1607,12 @@ def main():
         )
         if not gg.empty:
             fig = px.bar(gg, x="Year_int", y="Publicaciones",
-                         title="Publicaciones por Año", text="Publicaciones")
+                         title="Publicaciones por Año", text="Publicaciones",
+                         labels={"Year_int": "Año", "Publicaciones": "Publicaciones"})
             fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
                               xaxis=dict(title="Año", dtick=1), yaxis=dict(title="Publicaciones"))
-            fig.update_traces(textposition="outside")
+            fig.update_traces(textposition="outside",
+                              hovertemplate="<b>%{x}</b><br>Publicaciones: %{y}<extra></extra>")
             st.plotly_chart(fig, use_container_width=True)
             _report_figs.append(fig)
         else:
@@ -1601,7 +1633,8 @@ def main():
             jj["Suma JIF"] = jj["Suma JIF"].round(1)
             fig = px.line(jj, x="Year", y="Suma JIF", markers=True,
                           title="Suma JIF por Año", text="Suma JIF")
-            fig.update_traces(textposition="top center")
+            fig.update_traces(textposition="top center",
+                              hovertemplate="<b>%{x}</b><br>Suma JIF: %{y:.1f}<extra></extra>")
             fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
                               xaxis=dict(title="Año", dtick=1, range=[y_min_jif, current_year]),
                               yaxis=dict(title="Suma JIF"))
@@ -1630,7 +1663,9 @@ def main():
             fig2 = px.bar(pivot, x="Year_int", y="n", color="Quartile",
                           title="Publicaciones por cuartil y año",
                           color_discrete_map=_Q_COLORS,
-                          category_orders={"Quartile": _Q_ORDER})
+                          category_orders={"Quartile": _Q_ORDER},
+                          labels={"Year_int": "Año", "n": "Publicaciones", "Quartile": "Cuartil"})
+            fig2.update_traces(hovertemplate="<b>%{fullData.name}</b><br>Año: %{x}<br>Publicaciones: %{y}<extra></extra>")
             fig2.update_layout(barmode="stack", xaxis=dict(dtick=1, title="Año"),
                                yaxis=dict(title="Publicaciones"),
                                margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10))
@@ -1663,7 +1698,8 @@ def main():
             fig_oa = px.bar(oa_agg, x="Year_int", y="% OA",
                             title="Porcentaje Open Access por año", text="% OA",
                             labels={"Year_int": "Año", "% OA": "% Open Access"})
-            fig_oa.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+            fig_oa.update_traces(texttemplate="%{text:.1f}%", textposition="outside",
+                                 hovertemplate="<b>%{x}</b><br>Open Access: %{y:.1f}%<extra></extra>")
             fig_oa.update_layout(xaxis=dict(dtick=1), yaxis=dict(range=[0, 110]),
                                  margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10))
             st.plotly_chart(fig_oa, use_container_width=True)
@@ -1726,38 +1762,179 @@ def main():
 
         if not dep.empty:
             dep["Depto_corto"] = dep["Departamento"].map(_short_dept)
+            _dept_color_map = _get_dept_color_map(dep["Departamento"].tolist())
             fig = px.bar(
                 dep.sort_values("Publicaciones"),
                 x="Publicaciones", y="Depto_corto", orientation="h",
                 title="Publicaciones por Departamento", text="Publicaciones",
+                color="Depto_corto",
+                color_discrete_map=_dept_color_map,
             )
-            fig.update_traces(textposition="inside", insidetextanchor="start")
+            fig.update_traces(textposition="inside", insidetextanchor="start",
+                              hovertemplate="<b>%{y}</b><br>Publicaciones: %{x}<extra></extra>")
             fig.update_layout(
                 yaxis=dict(categoryorder="total ascending", title=""),
                 margin=dict(l=220, r=10, t=50, b=10),
                 height=max(400, 40 * len(dep) + 100), font=dict(size=11),
+                showlegend=False,
             )
             st.plotly_chart(fig, use_container_width=True)
             _report_figs.append(fig)
 
-            # Evolución por depto y año
+            # ── Treemap de departamentos ──────────────────────────────────────
+            st.subheader("🗂️ Treemap de departamentos")
+            dep_tree = dep[dep["Depto_corto"] != "Sin depto. especificado"].copy()
+            if not dep_tree.empty:
+                total_pubs = len(dff)
+                dep_tree["Porcentaje"] = (dep_tree["Publicaciones"] / total_pubs * 100).round(1)
+                fig_tree = px.treemap(
+                    dep_tree,
+                    path=["Depto_corto"],
+                    values="Publicaciones",
+                    title="Distribución de publicaciones por departamento (Treemap)",
+                    color="Depto_corto",
+                    color_discrete_map=_dept_color_map,
+                    custom_data=["Publicaciones", "Porcentaje"],
+                )
+                fig_tree.update_traces(
+                    texttemplate="<b>%{label}</b><br>%{customdata[0]} (%{customdata[1]:.1f}%)",
+                    hovertemplate="<b>%{label}</b><br>Publicaciones: %{customdata[0]}<br>%{customdata[1]:.1f}% del total<extra></extra>",
+                    textfont=dict(size=13),
+                )
+                fig_tree.update_layout(
+                    margin=dict(l=10, r=10, t=50, b=10),
+                    font=dict(size=13),
+                    height=620,
+                )
+                st.plotly_chart(fig_tree, use_container_width=True)
+                _report_figs.append(fig_tree)
+
+            # ── Evolución por depto y año (área con toggle heatmap) ──────────
             st.subheader("📈 Evolución por departamento y año")
             dep_yr = dep_exploded[dep_exploded["Year_int"].notna()].copy()
             if not dep_yr.empty:
-                top_deps = dep["Departamento"].head(8).tolist()
+                top_deps = dep["Departamento"].head(10).tolist()
                 dep_yr_top = dep_yr[dep_yr["Departamento"].isin(top_deps)].copy()
                 dep_yr_top["Depto_corto"] = dep_yr_top["Departamento"].map(_short_dept)
                 pivot_dep = dep_yr_top.groupby(["Year_int", "Depto_corto"]).size().reset_index(name="n")
                 legend_order = [_short_dept(d) for d in top_deps]
-                fig2 = px.line(pivot_dep, x="Year_int", y="n", color="Depto_corto",
-                               markers=True, title="Top 8 departamentos por año",
-                               category_orders={"Depto_corto": legend_order})
-                fig2.update_layout(xaxis=dict(dtick=1, title="Año"),
-                                   yaxis=dict(title="Publicaciones"),
-                                   legend=dict(title="Departamento"),
-                                   margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10))
-                st.plotly_chart(fig2, use_container_width=True)
-                _report_figs.append(fig2)
+                top_color_map = _get_dept_color_map(top_deps)
+
+                _viz_mode = st.radio(
+                    "Vista:",
+                    ["Líneas", "Área apilada", "Mapa de calor"],
+                    horizontal=True,
+                    key="dept_evo_viz_radio",
+                )
+
+                _cur_year = datetime.now().year
+                if _viz_mode == "Líneas":
+                    fig2 = px.line(
+                        pivot_dep[pivot_dep["Year_int"] <= _cur_year],
+                        x="Year_int", y="n", color="Depto_corto",
+                        markers=True, title="Top 10 departamentos por año",
+                        category_orders={"Depto_corto": legend_order},
+                        color_discrete_map=top_color_map,
+                        labels={"Year_int": "Año", "n": "Publicaciones", "Depto_corto": "Departamento"},
+                    )
+                    fig2.update_traces(
+                        hovertemplate="<b>%{fullData.name}</b><br>Año: %{x}<br>Publicaciones: %{y}<extra></extra>"
+                    )
+                    fig2.update_layout(
+                        xaxis=dict(dtick=1, title="Año", range=[pivot_dep["Year_int"].min() - 0.5, _cur_year + 0.5]),
+                        yaxis=dict(title="Publicaciones"),
+                        legend=dict(title="Departamento"),
+                        margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
+                    )
+                    st.plotly_chart(fig2, use_container_width=True)
+                    _report_figs.append(fig2)
+                elif _viz_mode == "Área apilada":
+                    fig2 = px.area(
+                        pivot_dep, x="Year_int", y="n", color="Depto_corto",
+                        line_group="Depto_corto",
+                        markers=True, title="Top 10 departamentos por año",
+                        category_orders={"Depto_corto": legend_order},
+                        color_discrete_map=top_color_map,
+                        labels={"Year_int": "Año", "n": "Publicaciones", "Depto_corto": "Departamento"},
+                    )
+                    fig2.update_traces(
+                        hovertemplate="<b>%{fullData.name}</b><br>Año: %{x}<br>Publicaciones: %{y}<extra></extra>"
+                    )
+                    fig2.update_layout(
+                        xaxis=dict(dtick=1, title="Año"),
+                        yaxis=dict(title="Publicaciones"),
+                        legend=dict(title="Departamento"),
+                        margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
+                    )
+                    st.plotly_chart(fig2, use_container_width=True)
+                    _report_figs.append(fig2)
+                else:
+                    # Mapa de calor departamento × año
+                    heat_pivot = (
+                        pivot_dep.pivot(index="Depto_corto", columns="Year_int", values="n")
+                        .fillna(0)
+                        .astype(int)
+                    )
+                    # Ordenar filas por total descendente
+                    heat_pivot = heat_pivot.loc[heat_pivot.sum(axis=1).sort_values(ascending=False).index]
+                    fig_heat = px.imshow(
+                        heat_pivot,
+                        title="Mapa de calor: publicaciones por departamento y año",
+                        labels=dict(x="Año", y="Departamento", color="Publicaciones"),
+                        aspect="auto",
+                        color_continuous_scale="Blues",
+                    )
+                    fig_heat.update_layout(
+                        margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
+                        xaxis=dict(title="Año"),
+                        yaxis=dict(title=""),
+                    )
+                    st.plotly_chart(fig_heat, use_container_width=True)
+                    _report_figs.append(fig_heat)
+
+            # ── Gráfico de burbujas cuartil × citas ──────────────────────────
+            st.subheader("🫧 Impacto por cuartil y departamento")
+            citas_col_dept = _first_col(dff, ["Cited by", "Times Cited", "Citation Count", "Citas"])
+            if citas_col_dept and "Departamentos_lista" in dff.columns:
+                bubble_df = dff[["Departamentos_lista", "Quartile", citas_col_dept]].copy()
+                bubble_df["Citas"] = pd.to_numeric(bubble_df[citas_col_dept], errors="coerce").fillna(0)
+                bubble_df = bubble_df[(bubble_df["Quartile"].isin(["Q1", "Q2", "Q3", "Q4"])) & (bubble_df["Citas"] > 0)]
+                if not bubble_df.empty:
+                    bubble_df = bubble_df.explode("Departamentos_lista").rename(columns={"Departamentos_lista": "Departamento"})
+                    bubble_df = bubble_df[~bubble_df["Departamento"].isin(["Sin depto. especificado"])]
+                    bubble_df["Depto_corto"] = bubble_df["Departamento"].map(_short_dept)
+                    bubble_agg = (
+                        bubble_df.groupby(["Depto_corto", "Quartile"])
+                        .agg(Mean_Citas=("Citas", "mean"), N=("Citas", "count"))
+                        .reset_index()
+                    )
+                    bubble_color_map = _get_dept_color_map(bubble_df["Departamento"].tolist())
+                    bubble_agg["Mean_Citas"] = bubble_agg["Mean_Citas"].round(1)
+                    fig_bub = px.scatter(
+                        bubble_agg,
+                        x="Quartile",
+                        y="Mean_Citas",
+                        size="N",
+                        color="Depto_corto",
+                        title="Impacto por cuartil y departamento",
+                        labels={"Mean_Citas": "Promedio de citas", "Quartile": "Cuartil", "Depto_corto": "Departamento"},
+                        color_discrete_map=bubble_color_map,
+                        category_orders={"Quartile": ["Q1", "Q2", "Q3", "Q4"]},
+                        custom_data=["Depto_corto", "N", "Mean_Citas"],
+                    )
+                    fig_bub.update_traces(
+                        hovertemplate="<b>%{customdata[0]}</b><br>Cuartil: %{x}<br>Promedio citas: %{customdata[2]:.1f}<br>Papers: %{customdata[1]}<extra></extra>"
+                    )
+                    fig_bub.update_layout(
+                        margin=dict(l=10, r=10, t=50, b=10), font=dict(size=10),
+                        legend=dict(title="Departamento"),
+                    )
+                    st.plotly_chart(fig_bub, use_container_width=True)
+                    _report_figs.append(fig_bub)
+                else:
+                    st.info("No hay datos suficientes (cuartil + citas) para el gráfico de burbujas.")
+            else:
+                st.info("No se encontró columna de citas para el gráfico de burbujas.")
         else:
             st.info("No se detectaron departamentos CAS/UDD en el subconjunto filtrado.")
 
@@ -1800,8 +1977,9 @@ def main():
                 .sort_values("Publicaciones", ascending=False)
                 .head(30)
             )
+            rev_metrics = rev_metrics[rev_metrics["Revista"].astype(str).str.strip() != ""]
             rev_metrics["JIF Promedio"] = rev_metrics["JIF Promedio"].round(3)
-            st.dataframe(rev_metrics, use_container_width=True, height=400)
+            st.dataframe(rev_metrics.reset_index(drop=True), use_container_width=True, height=400)
             st.download_button(
                 "⬇️ Descargar tabla revistas (CSV)",
                 data=rev_metrics.to_csv(index=False).encode("utf-8-sig"),
@@ -1853,6 +2031,15 @@ def main():
                 st.plotly_chart(fig, use_container_width=True)
                 _report_figs.append(fig)
 
+                st.subheader("📋 Ranking (tabla)")
+                st.dataframe(ranking, use_container_width=True, height=400)
+                st.download_button(
+                    "⬇️ Descargar ranking CAS (CSV)",
+                    data=ranking.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"ranking_autores_CAS_top{len(plot_df)}.csv",
+                    mime="text/csv",
+                )
+
                 # Evolución temporal del autor seleccionado
                 st.subheader("📈 Evolución temporal de un autor")
                 selected_author = st.selectbox(
@@ -1867,7 +2054,8 @@ def main():
                             title=f"Producción anual — {selected_author}",
                             text="Publicaciones",
                         )
-                        fig_evo.update_traces(textposition="outside")
+                        fig_evo.update_traces(textposition="outside",
+                                              hovertemplate="<b>%{x}</b><br>Publicaciones: %{y}<extra></extra>")
                         fig_evo.update_layout(
                             xaxis=dict(dtick=1, title="Año"), yaxis=dict(title="Publicaciones"),
                             margin=dict(l=10, r=10, t=50, b=10), font=dict(size=11),
@@ -1875,15 +2063,6 @@ def main():
                         st.plotly_chart(fig_evo, use_container_width=True)
                     else:
                         st.info("No se encontraron datos anuales para este autor.")
-
-                st.subheader("📋 Ranking (tabla)")
-                st.dataframe(ranking, use_container_width=True, height=400)
-                st.download_button(
-                    "⬇️ Descargar ranking CAS (CSV)",
-                    data=ranking.to_csv(index=False).encode("utf-8-sig"),
-                    file_name=f"ranking_autores_CAS_top{len(plot_df)}.csv",
-                    mime="text/csv",
-                )
 
     # ── Tab 6: Colaboración ───────────────────────────────────────────────────
     with tabs[6]:
@@ -2054,9 +2233,10 @@ def main():
                 fig_sjr.update_traces(textposition="inside", insidetextanchor="start")
                 st.plotly_chart(fig_sjr, use_container_width=True)
 
-    # ── Tab 8: Listado ────────────────────────────────────────────────────────
-    with tabs[8]:
+    # ── Tab 10: Listado ───────────────────────────────────────────────────────
+    with tabs[10]:
         st.subheader("📋 Listado de publicaciones")
+        _listado_search = st.text_input("🔍 Buscar título o autor", key="listado_search_input")
         basic_candidates = [
             "Title", "Journal_display", "Source title", "Year", "DOI",
             "Authors", "Quartile", "Journal Impact Factor", "Departamento",
@@ -2087,8 +2267,21 @@ def main():
         if final_cols:
             display_df = display_df[final_cols].copy()
 
+        if "Año" in display_df.columns:
+            display_df = display_df.sort_values("Año", ascending=False)
         display_df = display_df.reset_index(drop=True)
         display_df.index = display_df.index + 1
+
+        # Aplicar búsqueda por título o autor
+        if _listado_search.strip():
+            _mask_search = pd.Series(False, index=display_df.index)
+            for _scol in ["Título", "Autores"]:
+                if _scol in display_df.columns:
+                    _mask_search |= display_df[_scol].fillna("").astype(str).str.contains(
+                        _listado_search, case=False, na=False, regex=False
+                    )
+            display_df = display_df[_mask_search]
+
         st.caption(f"Mostrando {_n(len(display_df))} publicaciones del subconjunto filtrado.")
         st.dataframe(display_df, use_container_width=True, height=500)
 
@@ -2107,8 +2300,8 @@ def main():
                                file_name="listado_publicaciones.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # ── Tab 9: Wordcloud ──────────────────────────────────────────────────────
-    with tabs[9]:
+    # ── Tab 8: Wordcloud ──────────────────────────────────────────────────────
+    with tabs[8]:
         st.subheader("☁️ Wordcloud")
         try:
             import importlib.util
@@ -2156,8 +2349,8 @@ def main():
         except Exception as e:
             st.warning(f"Error en Wordcloud: {e}")
 
-    # ── Tab 10: Citas ─────────────────────────────────────────────────────────
-    with tabs[10]:
+    # ── Tab 9: Citas ──────────────────────────────────────────────────────────
+    with tabs[9]:
         st.subheader("📖 Citas por año")
         if citas_col and (total_citas > 0).any():
             dff_c = dff[["Year_int", citas_col]].copy()
@@ -2209,10 +2402,34 @@ def main():
     )
     if st.button("Generar informe HTML", type="primary"):
         with st.spinner("Generando informe…"):
+            _kpi_html_block = f"""
+<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:25px;">
+  <div style="background:#f0f4ff;border-radius:8px;padding:16px 24px;flex:1;min-width:150px;text-align:center;">
+    <div style="font-size:22px;font-weight:bold;color:#1f77b4;">{_n(len(dff))}</div>
+    <div style="font-size:13px;color:#555;">Total publicaciones</div>
+  </div>
+  <div style="background:#f0f4ff;border-radius:8px;padding:16px 24px;flex:1;min-width:150px;text-align:center;">
+    <div style="font-size:22px;font-weight:bold;color:#1f77b4;">{_f(_jif_mean, 2)}</div>
+    <div style="font-size:13px;color:#555;">JIF promedio</div>
+  </div>
+  <div style="background:#f0f4ff;border-radius:8px;padding:16px 24px;flex:1;min-width:150px;text-align:center;">
+    <div style="font-size:22px;font-weight:bold;color:#27ae60;">{_f(_pct_q1, 1)}%</div>
+    <div style="font-size:13px;color:#555;">% Q1</div>
+  </div>
+  <div style="background:#f0f4ff;border-radius:8px;padding:16px 24px;flex:1;min-width:150px;text-align:center;">
+    <div style="font-size:22px;font-weight:bold;color:#2980b9;">{_f(_pct_oa, 1)}%</div>
+    <div style="font-size:13px;color:#555;">% Open Access</div>
+  </div>
+  <div style="background:#f0f4ff;border-radius:8px;padding:16px 24px;flex:1;min-width:150px;text-align:center;">
+    <div style="font-size:22px;font-weight:bold;color:#e67e22;">{_n(_n_intl)}</div>
+    <div style="font-size:13px;color:#555;">Colab. internacional</div>
+  </div>
+</div>"""
             html_content = _generate_html_report(
                 dff,
                 "Dashboard de Producción Científica — CAS/UDD",
                 _report_figs,
+                kpi_html=_kpi_html_block,
             )
         st.download_button(
             "⬇️ Descargar informe HTML",
