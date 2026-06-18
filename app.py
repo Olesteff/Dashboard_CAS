@@ -97,6 +97,20 @@ def _n(n: int) -> str:
     return f"{int(n):,}".replace(",", ".")
 
 
+def _f(x: float, decimals: int = 1) -> str:
+    """Formatea flotantes con convención chilena: punto=miles, coma=decimal."""
+    formatted = f"{x:,.{decimals}f}"          # "23,941.4"
+    parts = formatted.split(".")
+    integer_part = parts[0].replace(",", ".")  # "23.941"
+    decimal_part = parts[1] if len(parts) > 1 else ""
+    return f"{integer_part},{decimal_part}" if decimal_part else integer_part
+
+
+def _pct(x: float, decimals: int = 1) -> str:
+    """Formatea un valor 0-1 como porcentaje con convención chilena."""
+    return _f(x * 100, decimals) + "%"
+
+
 def _short_dept(name: str) -> str:
     """Nombre corto para mostrar en gráficos: quita prefijos largos."""
     return (
@@ -1134,20 +1148,20 @@ def main():
 
     col1, col2, col3, col4 = st.columns(4)
     with col1: st.metric("📚 Publicaciones", f"{_n(len(dff))} / {_n(len(df))}")
-    with col2: st.metric("🔓 % Open Access", f"{100 * dff['OpenAccess_flag'].mean():.1f}%")
-    with col3: st.metric("📈 Suma JIF", f"{dff['Journal Impact Factor'].sum():.1f}")
+    with col2: st.metric("🔓 % Open Access", _pct(dff['OpenAccess_flag'].mean()))
+    with col3: st.metric("📈 Suma JIF", _f(dff['Journal Impact Factor'].sum()))
     with col4: st.metric("🧪 Ensayos clínicos", int(dff["ClinicalTrial_flag"].sum()))
 
     col5, col6, col7, col8 = st.columns(4)
     with col5: st.metric("📖 Total citas", _n(int(total_citas.sum())))
-    with col6: st.metric("📖 Promedio citas", f"{total_citas.mean():.1f}")
-    with col7: st.metric("🏆 % en Q1", f"{100 * (dff['Quartile'] == 'Q1').mean():.1f}%")
+    with col6: st.metric("📖 Promedio citas", _f(total_citas.mean()))
+    with col7: st.metric("🏆 % en Q1", _pct((dff['Quartile'] == 'Q1').mean()))
     with col8: st.metric("📊 h-index", h_index)
 
     if "Colab_externa" in dff.columns:
         col9, col10 = st.columns(2)
-        with col9:  st.metric("🤝 % Colab. externa",         f"{100 * dff['Colab_externa'].mean():.1f}%")
-        with col10: st.metric("🌍 % Colab. internacional",   f"{100 * dff['Colab_internacional'].mean():.1f}%")
+        with col9:  st.metric("🤝 % Colab. externa",         _pct(dff['Colab_externa'].mean()))
+        with col10: st.metric("🌍 % Colab. internacional",   _pct(dff['Colab_internacional'].mean()))
 
     # Lista de figuras para exportar al informe HTML
     _report_figs: List[go.Figure] = []
@@ -1507,9 +1521,9 @@ def main():
             n_int_only = n_total - n_ext
 
             c1, c2, c3 = st.columns(3)
-            with c1:  st.metric("🏛️ Solo interna",           f"{_n(n_int_only)} ({100*n_int_only/n_total:.1f}%)")
-            with c2:  st.metric("🤝 Con colab. externa",      f"{_n(n_ext)} ({100*n_ext/n_total:.1f}%)")
-            with c3:  st.metric("🌍 Con colab. internacional", f"{_n(n_intl)} ({100*n_intl/n_total:.1f}%)")
+            with c1:  st.metric("🏛️ Solo interna",           f"{_n(n_int_only)} ({_f(100*n_int_only/n_total)}%)")
+            with c2:  st.metric("🤝 Con colab. externa",      f"{_n(n_ext)} ({_f(100*n_ext/n_total)}%)")
+            with c3:  st.metric("🌍 Con colab. internacional", f"{_n(n_intl)} ({_f(100*n_intl/n_total)}%)")
 
             n_nacional = max(0, n_ext - n_intl)
             collab_counts = pd.DataFrame({
