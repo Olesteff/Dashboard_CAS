@@ -2156,16 +2156,23 @@ def main():
                         .rename(columns={"index": "País", 0: "Menciones", "count": "Menciones"})
                     )
                     country_counts.columns = ["País", "Menciones"]
+                    country_counts["Log_Menciones"] = np.log1p(country_counts["Menciones"])
                     fig_map = px.choropleth(
                         country_counts, locations="País",
                         locationmode="country names",
-                        color="Menciones",
+                        color="Log_Menciones",
                         color_continuous_scale="Blues",
                         title="Países con autores colaboradores (frecuencia de aparición en afiliaciones)",
+                        hover_data={"Menciones": True, "Log_Menciones": False},
+                        labels={"Log_Menciones": "Intensidad"},
+                    )
+                    fig_map.update_traces(
+                        hovertemplate="<b>%{location}</b><br>Menciones: %{customdata[0]}<extra></extra>"
                     )
                     fig_map.update_layout(
                         margin=dict(l=0, r=0, t=50, b=0), font=dict(size=10),
                         geo=dict(showframe=False, showcoastlines=True),
+                        coloraxis_colorbar=dict(title="Menciones (log)"),
                     )
                     st.plotly_chart(fig_map, use_container_width=True)
                     _report_figs.append(fig_map)
