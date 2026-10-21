@@ -809,7 +809,6 @@ def _parse_author_list(raw: str) -> List[str]:
     return [s]
 
 
-@st.cache_data(show_spinner=False)
 def _build_global_cas_author_keys(
     df_full: pd.DataFrame,
     aff_col: Optional[str],
@@ -880,12 +879,14 @@ def build_cas_ranking(
     # FIX: el universo CAS se calcula sobre el dataset COMPLETO (df),
     # no sobre el subconjunto filtrado (dff). Si no, un autor cuyo único
     # paper CAS fue filtrado por año/cuartil/depto nunca entra al universo.
-    _df_full = st.session_state.get("_df_full_for_cas")
-    cas_author_keys: set = _build_global_cas_author_keys(
-        _df_full if _df_full is not None else work,
-        aff_col,
-        include_udd,
-    )
+    # Cacheado en session_state: solo se recalcula si cambia el df o include_udd.
+    _df_full = st.session_state.get("_df_full_for_cas") or work
+    _cache_key = f"_cas_keys_cache_{include_udd}"
+    if _cache_key in st.session_state:
+        cas_author_keys = st.session_state[_cache_key]
+    else:
+        cas_author_keys = _build_global_cas_author_keys(_df_full, aff_col, include_udd)
+        st.session_state[_cache_key] = cas_author_keys
 
     if not cas_author_keys:
         return pd.DataFrame()
@@ -1577,6 +1578,13 @@ def main():
 
     # Cachear el df completo para que build_cas_ranking calcule el universo CAS global
     st.session_state["_df_full_for_cas"] = df
+
+    # Invalidar caché de universo CAS si cambia el df (por ejemplo, nuevo XLSX subido)
+    _df_sig = (id(df), len(df))  # firma barata
+    if st.session_state.get("_df_sig_for_cas") != _df_sig:
+        st.session_state["_df_sig_for_cas"] = _df_sig
+        st.session_state.pop("_cas_keys_cache_true",  None)
+        st.session_state.pop("_cas_keys_cache_false", None)
 
     # ── Info sidebar ──
     st.sidebar.header("📊 Información del Dataset")
