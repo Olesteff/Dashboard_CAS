@@ -1411,13 +1411,7 @@ def load_data(uploaded=None) -> Optional[pd.DataFrame]:
     return None
 
 
-@st.cache_data(
-    show_spinner=False,
-    ttl=60,
-    hash_funcs={
-        pd.DataFrame: lambda df: int(pd.util.hash_pandas_object(df, index=False).sum())
-    },
-)
+@st.cache_data(show_spinner=False, ttl=60)
 def _cached_cas_ranking(
     dff: pd.DataFrame,
     include_udd: bool,
