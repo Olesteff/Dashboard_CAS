@@ -629,8 +629,6 @@ def canon_author(name: str) -> str:
     last_norm = _norm_text(last)
     given_norm = _norm_text(given)
     first_alpha = next((ch for ch in given_norm if ch.isalpha()), "")
-    if len(given_norm) >= 3:
-        return f"{last_norm}|{given_norm[:3]}"
     return f"{last_norm}|{first_alpha}"
 
 
@@ -780,34 +778,32 @@ def build_cas_ranking(
         work["_id"] = work.index.astype(str)
         id_col = "_id"
 
-    # Filtro de papers: siempre include_udd=True para no perder papers donde
-    # el autor declaró UDD en vez de "Clínica Alemana" explícitamente.
-    # include_udd solo afecta qué nombres se muestran en el ranking.
+    # 1. Identificar globalmente quiénes son autores CAS
+    cas_author_keys: set = set()
     aff_cols = [c for c in [aff_col, "Affiliations", "Addresses"] if c]
-    cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd=True)
-    work = work.loc[cas_mask].copy()
+    if aff_col:
+        cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd=True)
+        cas_papers = work.loc[cas_mask]
+        auth_col_for_mask = _first_col(cas_papers, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
+        if auth_col_for_mask:
+            for authors_str in cas_papers[auth_col_for_mask].dropna():
+                for entry in str(authors_str).split(";"):
+                    name = _strip_scopus_id(entry)
+                    if name:
+                        cas_author_keys.add(canon_author(name))
 
-    if work.empty:
+    if not cas_author_keys:
         return pd.DataFrame()
 
+    # 2. Procesar TODOS los papers y sumar a los autores CAS
     auth_col = _first_col(work, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
-
-    # Canon keys de autores que tienen al menos un segmento CAS en este dataset
-    cas_author_keys: set = set()
-    if aff_col and aff_col in work.columns:
-        for affil_str in work[aff_col].fillna("").astype(str):
-            for seg in _chunk_authors_with_affils(affil_str):
-                if not _is_cas_affil(seg, include_udd):
-                    continue
-                name_part = seg.split(",")[0].strip()
-                key = canon_author(name_part)
-                if key:
-                    cas_author_keys.add(key)
+    if not auth_col:
+        return pd.DataFrame()
 
     rows = []
     for _, row in work.iterrows():
         pub_id = row[id_col]
-        raw_authors = str(row.get(auth_col, "")) if auth_col and pd.notna(row.get(auth_col)) else ""
+        raw_authors = str(row.get(auth_col, "")) if pd.notna(row.get(auth_col)) else ""
         if not raw_authors or raw_authors.lower() == "nan":
             continue
         seen_in_pub: set = set()
@@ -819,23 +815,23 @@ def build_cas_ranking(
             if not key or key in seen_in_pub:
                 continue
             seen_in_pub.add(key)
-            display = fullname_lookup.get(key, name)
-            rows.append({"Autor_original": display, "Autor_key": key, "Pub_ID": pub_id})
+            if key in cas_author_keys:
+                display = fullname_lookup.get(key, name)
+                rows.append({"Autor_original": display, "Autor_key": key, "Pub_ID": pub_id})
 
     if not rows:
         return pd.DataFrame()
 
     df_auth = pd.DataFrame(rows)
 
-    if df_auth.empty:
-        return pd.DataFrame()
-
+    # 3. Contar publicaciones únicas por autor
     counts = (
         df_auth.groupby("Autor_key", as_index=False)["Pub_ID"]
         .nunique()
         .rename(columns={"Pub_ID": "Publicaciones"})
     )
 
+    # 4. Elegir mejor nombre para mostrar
     def pick_name(series: pd.Series) -> str:
         vals = series.dropna().astype(str)
         vals = vals[(vals != "") & (~vals.str.lower().isin(["nan", "none"]))]
@@ -862,7 +858,6 @@ def build_cas_ranking(
     result["Autor"] = result["Autor"].fillna("").astype(str).str.strip()
     result = result[result["Autor"] != ""].copy()
 
-    # Ocultar autores ICIM conocidos cuando include_udd=False
     if not include_udd:
         result = result[~result["Autor_key"].isin(_ICIM_CANON_KEYS)]
 
