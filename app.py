@@ -772,17 +772,10 @@ def build_cas_ranking(
     aff_col: Optional[str],
     author_col: Optional[str],
 ) -> pd.DataFrame:
-    fullname_lookup = _build_fullname_lookup(dff)
+    """Ranking de autores usando el campo AuthorNames_consolidated del pipeline."""
 
+    # 1. Filtrar solo papers con al menos un segmento CAS en sus afiliaciones
     work = dff.copy()
-    id_col = _first_col(work, ["ID_final", "DOI", "EID", "UT", "PMID"])
-    if not id_col:
-        work["_id"] = work.index.astype(str)
-        id_col = "_id"
-
-    # Filtro de papers: siempre include_udd=True para no perder papers donde
-    # el autor declaró UDD en vez de "Clínica Alemana" explícitamente.
-    # include_udd solo afecta qué nombres se muestran en el ranking.
     aff_cols = [c for c in [aff_col, "Affiliations", "Addresses"] if c]
     cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd=True)
     work = work.loc[cas_mask].copy()
@@ -790,24 +783,17 @@ def build_cas_ranking(
     if work.empty:
         return pd.DataFrame()
 
+    # 2. Usar el campo AuthorNames_consolidated (ya unificado por el pipeline)
     auth_col = _first_col(work, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
+    if not auth_col:
+        return pd.DataFrame()
 
-    # Canon keys de autores que tienen al menos un segmento CAS en este dataset
-    cas_author_keys: set = set()
-    if aff_col and aff_col in work.columns:
-        for affil_str in work[aff_col].fillna("").astype(str):
-            for seg in _chunk_authors_with_affils(affil_str):
-                if not _is_cas_affil(seg, include_udd):
-                    continue
-                name_part = seg.split(",")[0].strip()
-                key = canon_author(name_part)
-                if key:
-                    cas_author_keys.add(key)
-
+    # 3. Explotar la lista de autores y contar publicaciones por clave canónica
+    id_col = _first_col(work, ["ID_final", "DOI", "EID", "UT", "PMID"])
     rows = []
     for _, row in work.iterrows():
-        pub_id = row[id_col]
-        raw_authors = str(row.get(auth_col, "")) if auth_col and pd.notna(row.get(auth_col)) else ""
+        pub_id = row.get(id_col, row.name) if id_col else row.name
+        raw_authors = str(row.get(auth_col, "")) if pd.notna(row.get(auth_col)) else ""
         if not raw_authors or raw_authors.lower() == "nan":
             continue
         seen_in_pub: set = set()
@@ -819,23 +805,21 @@ def build_cas_ranking(
             if not key or key in seen_in_pub:
                 continue
             seen_in_pub.add(key)
-            display = fullname_lookup.get(key, name)
-            rows.append({"Autor_original": display, "Autor_key": key, "Pub_ID": pub_id})
+            rows.append({"Autor_key": key, "Autor_original": name, "Pub_ID": pub_id})
 
     if not rows:
         return pd.DataFrame()
 
     df_auth = pd.DataFrame(rows)
 
-    if df_auth.empty:
-        return pd.DataFrame()
-
+    # 4. Contar publicaciones únicas por autor
     counts = (
         df_auth.groupby("Autor_key", as_index=False)["Pub_ID"]
         .nunique()
         .rename(columns={"Pub_ID": "Publicaciones"})
     )
 
+    # 5. Elegir el mejor nombre para mostrar
     def pick_name(series: pd.Series) -> str:
         vals = series.dropna().astype(str)
         vals = vals[(vals != "") & (~vals.str.lower().isin(["nan", "none"]))]
@@ -849,8 +833,7 @@ def build_cas_ranking(
             scored.append((score, v))
         best = sorted(scored, key=lambda x: x[0], reverse=True)[0][1]
         shown = author_to_initials(best) if fmt == "initials" else author_to_full(best)
-        shown = str(shown).strip()
-        return "" if not shown or shown.lower() in {"nan", "none"} else shown
+        return "" if not shown or shown.lower() in {"nan", "none"} else str(shown).strip()
 
     names = (
         df_auth.groupby("Autor_key")["Autor_original"]
@@ -862,7 +845,7 @@ def build_cas_ranking(
     result["Autor"] = result["Autor"].fillna("").astype(str).str.strip()
     result = result[result["Autor"] != ""].copy()
 
-    # Ocultar autores ICIM conocidos cuando include_udd=False
+    # 6. Ocultar autores ICIM cuando include_udd=False
     if not include_udd:
         result = result[~result["Autor_key"].isin(_ICIM_CANON_KEYS)]
 
@@ -1328,7 +1311,7 @@ def load_data(uploaded=None) -> Optional[pd.DataFrame]:
     return None
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=60)
 def _cached_cas_ranking(
     dff: pd.DataFrame,
     include_udd: bool,
