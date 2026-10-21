@@ -880,7 +880,8 @@ def build_cas_ranking(
     # no sobre el subconjunto filtrado (dff). Si no, un autor cuyo único
     # paper CAS fue filtrado por año/cuartil/depto nunca entra al universo.
     # Cacheado en session_state: solo se recalcula si cambia el df o include_udd.
-    _df_full = st.session_state.get("_df_full_for_cas") or work
+    _df_full_candidate = st.session_state.get("_df_full_for_cas")
+    _df_full = _df_full_candidate if _df_full_candidate is not None else work
     _cache_key = f"_cas_keys_cache_{include_udd}"
     if _cache_key in st.session_state:
         cas_author_keys = st.session_state[_cache_key]
@@ -892,27 +893,26 @@ def build_cas_ranking(
         return pd.DataFrame()
 
     # ---------- PASO 2: contar sobre TODOS los papers ----------
-    # Vectorizado: expandir autores → canon_key → filtrar CAS → agrupar
-    _parsed = (
-        work[[id_col, auth_col]]
-        .dropna(subset=[auth_col])
-        .copy()
-    )
-    _parsed["_entries"] = _parsed[auth_col].apply(_parse_author_list)
-    _parsed = _parsed.explode("_entries").dropna(subset=["_entries"])
-    _parsed = _parsed[_parsed["_entries"].astype(str).str.strip() != ""]
-    _parsed["Autor_key"] = _parsed["_entries"].apply(canon_author)
-    _parsed = _parsed[_parsed["Autor_key"] != ""]
-    # dedup por (pub, autor) para no contar 2 veces el mismo autor en el mismo paper
-    _parsed = _parsed.drop_duplicates(subset=[id_col, "Autor_key"])
-    _parsed = _parsed[_parsed["Autor_key"].isin(cas_author_keys)]
-    _parsed["Autor_original"] = _parsed["Autor_key"].map(fullname_lookup).fillna(_parsed["_entries"])
-    rows_df = _parsed.rename(columns={id_col: "Pub_ID"})[["Autor_original", "Autor_key", "Pub_ID"]]
+    rows = []
+    for _, row in work.iterrows():
+        pub_id = row[id_col]
+        raw_authors = row.get(auth_col)
+        if raw_authors is None or (isinstance(raw_authors, float) and pd.isna(raw_authors)):
+            continue
+        seen_in_pub: set = set()
+        for entry in _parse_author_list(raw_authors):
+            key = canon_author(entry)
+            if not key or key in seen_in_pub:
+                continue
+            seen_in_pub.add(key)
+            if key in cas_author_keys:
+                display = fullname_lookup.get(key, entry)
+                rows.append({"Autor_original": display, "Autor_key": key, "Pub_ID": pub_id})
 
-    if rows_df.empty:
+    if not rows:
         return pd.DataFrame()
 
-    df_auth = rows_df
+    df_auth = pd.DataFrame(rows)
 
     counts = (
         df_auth.groupby("Autor_key", as_index=False)["Pub_ID"]
@@ -1411,17 +1411,16 @@ def load_data(uploaded=None) -> Optional[pd.DataFrame]:
     return None
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=60)
 def _cached_cas_ranking(
-    _dff: pd.DataFrame,
+    dff: pd.DataFrame,
     include_udd: bool,
     fmt: str,
     top_n: int,
     aff_col: Optional[str],
     author_col: Optional[str],
-    _cache_key: str = "",  # firma barata del dff para cache hit/miss
 ) -> pd.DataFrame:
-    return build_cas_ranking(_dff, include_udd, fmt, top_n, aff_col, author_col)
+    return build_cas_ranking(dff, include_udd, fmt, top_n, aff_col, author_col)
 
 
 # =========================
@@ -2104,9 +2103,7 @@ def main():
             author_col = _first_col(dff, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
 
             with st.spinner("Calculando ranking de autores CAS…"):
-                _id_col_sig = _first_col(dff, ["ID_final", "DOI", "EID", "UT"])
-                _dff_sig = f"{len(dff)}_{hash(tuple(dff[_id_col_sig].iloc[:5].tolist())) if _id_col_sig and len(dff) else id(dff)}"
-                ranking = _cached_cas_ranking(dff, include_udd, fmt_key, top_n, aff_col, author_col, _cache_key=_dff_sig)
+                ranking = _cached_cas_ranking(dff, include_udd, fmt_key, top_n, aff_col, author_col)
 
             if ranking.empty:
                 st.info("No se detectaron autores CAS en el subconjunto filtrado.")
