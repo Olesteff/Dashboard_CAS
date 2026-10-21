@@ -2339,7 +2339,8 @@ def main():
         _listado_search = st.text_input("🔍 Buscar título o autor", key="listado_search_input")
         basic_candidates = [
             "Title", "Journal_display", "Source title", "Year", "DOI",
-            "Authors", "Quartile", "Journal Impact Factor", "Departamento",
+            "AuthorNames_consolidated", "Author full names", "Authors",
+            "Quartile", "Journal Impact Factor", "Departamento",
             "Cited by", "Times Cited", "OpenAccess_flag",
         ]
         selected_cols = [c for c in basic_candidates if c in dff.columns]
@@ -2353,11 +2354,22 @@ def main():
                 axis=1,
             )
 
-        # Autores: limpiar "None" / NaN
-        if "Authors" in display_df.columns:
-            display_df["Authors"] = display_df["Authors"].astype(str).str.strip()
-            display_df["Authors"] = display_df["Authors"].where(
-                ~display_df["Authors"].str.lower().isin({"none", "nan", ""}), other=""
+        # Autores CAS: extraer solo los autores del universo CAS de cada paper
+        _cas_keys_for_list = st.session_state.get(f"_cas_keys_cache_{include_udd}", set())
+        _auth_col_list = next((c for c in ["AuthorNames_consolidated", "Author full names", "Authors"] if c in display_df.columns), None)
+        if _auth_col_list and _cas_keys_for_list:
+            def _extract_cas_authors(raw):
+                entries = _parse_author_list(str(raw)) if pd.notna(raw) and str(raw).lower() not in {"none", "nan", ""} else []
+                cas = [e for e in entries if canon_author(e) in _cas_keys_for_list]
+                if not cas:
+                    # fallback: todos los autores limpios
+                    cas = [e for e in entries if e.strip()]
+                return "; ".join(cas[:5]) + ("…" if len(cas) > 5 else "")
+            display_df["_Autores_CAS"] = display_df[_auth_col_list].apply(_extract_cas_authors)
+        elif _auth_col_list:
+            display_df["_Autores_CAS"] = display_df[_auth_col_list].astype(str).str.strip()
+            display_df["_Autores_CAS"] = display_df["_Autores_CAS"].where(
+                ~display_df["_Autores_CAS"].str.lower().isin({"none", "nan", ""}), other=""
             )
 
         if "OpenAccess_flag" in display_df.columns:
@@ -2367,7 +2379,7 @@ def main():
 
         rename_map = {
             "Title": "Título", "Journal_display": "Revista", "Source title": "Journal",
-            "Year": "Año", "DOI": "DOI", "Authors": "Autores",
+            "Year": "Año", "DOI": "DOI", "_Autores_CAS": "Autores CAS",
             "Quartile": "Cuartil", "Journal Impact Factor": "JIF",
             "Departamento": "Departamento", "Cited by": "Citas_scopus",
             "Times Cited": "Citas_wos", "OpenAccess_flag": "Open Access",
@@ -2375,7 +2387,7 @@ def main():
         display_df = display_df.rename(columns={k: v for k, v in rename_map.items() if k in display_df.columns})
 
         preferred_display_cols = [
-            "Título", "Revista", "Año", "DOI", "Autores",
+            "Título", "Revista", "Año", "DOI", "Autores CAS",
             "Cuartil", "JIF", "Departamento", "Citas_scopus", "Open Access",
         ]
         final_cols = [c for c in preferred_display_cols if c in display_df.columns]
@@ -2390,7 +2402,7 @@ def main():
         # Aplicar búsqueda por título o autor
         if _listado_search.strip():
             _mask_search = pd.Series(False, index=display_df.index)
-            for _scol in ["Título", "Autores"]:
+            for _scol in ["Título", "Autores CAS"]:
                 if _scol in display_df.columns:
                     _mask_search |= display_df[_scol].fillna("").astype(str).str.contains(
                         _listado_search, case=False, na=False, regex=False
