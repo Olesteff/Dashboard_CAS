@@ -614,16 +614,6 @@ def _normalize_author_name(name: str) -> str:
 
 
 def canon_author(name: str) -> str:
-    """Clave canónica 'apellido|inicial' — SOLO primera letra del nombre.
-
-    Unifica todas las variantes del mismo autor:
-        'Lavados, P.'       -> 'lavados|p'
-        'Lavados, Pablo'    -> 'lavados|p'
-        'Lavados, Pablo M.' -> 'lavados|p'
-        'Pablo Lavados'     -> 'lavados|p'
-        'LAVADOS, PABLO'    -> 'lavados|p'
-        'Pérez, José'       -> 'perez|j'
-    """
     name = _normalize_author_name(name)
     if not name:
         return ""
@@ -636,12 +626,10 @@ def canon_author(name: str) -> str:
             given = " ".join(parts[:-1])
         else:
             return _norm_text(name)
-
-    last_norm = re.sub(r"[\.\s]+", "", _norm_text(last))
+    last_norm = _norm_text(last)
     given_norm = _norm_text(given)
     first_alpha = next((ch for ch in given_norm if ch.isalpha()), "")
-    return f"{last_norm}|{first_alpha}" if first_alpha else last_norm
-
+    return f"{last_norm}|{first_alpha}"
 
 _ICIM_CANON_KEYS = {canon_author(n) for n in _ICIM_AUTHOR_NAMES}
 
@@ -800,10 +788,23 @@ def _parse_author_list(raw: str) -> List[str]:
     if len(parts) >= 2:
         pubmed_like = sum(
             1 for p in parts
-            if re.fullmatch(r"[A-Za-zÀ-ÿ'\-\s]+(\s+[A-Z]{1,3}\.?)?", p.strip())
+            if re.fullmatch(r"[A-Za-zÀ-ÿ'\-\s]+(\s+[A-Za-z]{1,3}\.?)?", p.strip())
         )
         if pubmed_like >= max(2, len(parts) // 2):
-            return [p.strip() for p in parts if p.strip()]
+            # Convertir "Apellido IN" → "Apellido, IN" para que canon_author
+            # use el branch de coma y tome el primer token como apellido
+            result = []
+            for p in parts:
+                p = p.strip()
+                if not p:
+                    continue
+                tokens = p.split()
+                if len(tokens) == 2:
+                    last_token_clean = re.sub(r"\.", "", tokens[-1])
+                    if len(last_token_clean) <= 3 and len(tokens[0]) > len(last_token_clean):
+                        p = f"{tokens[0]}, {tokens[1]}"
+                result.append(p)
+            return result
 
     return [s]
 
