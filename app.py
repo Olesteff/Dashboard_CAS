@@ -46,7 +46,7 @@ st.markdown("""
             Facultad de Medicina Clínica Alemana - Universidad del Desarrollo
         </p>
         <p style="text-align:center;color:#666;margin:5px 0 0 0;font-size:14px;font-style:italic;">
-            Análisis creado con técnicas de big data y ciencia de datos a partir de Scopus, Web of Science, Pubmed, Incites y Scimago
+            Creado con técnicas de big data y ciencia de datos a partir de Scopus, Web of Science, Pubmed, Incites y Scimago
         </p>
     </div>
 """, unsafe_allow_html=True)
