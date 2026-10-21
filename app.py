@@ -906,9 +906,7 @@ def build_cas_ranking(
     # dedup por (pub, autor) para no contar 2 veces el mismo autor en el mismo paper
     _parsed = _parsed.drop_duplicates(subset=[id_col, "Autor_key"])
     _parsed = _parsed[_parsed["Autor_key"].isin(cas_author_keys)]
-    _parsed["Autor_original"] = _parsed.apply(
-        lambda r: fullname_lookup.get(r["Autor_key"], r["_entries"]), axis=1
-    )
+    _parsed["Autor_original"] = _parsed["Autor_key"].map(fullname_lookup).fillna(_parsed["_entries"])
     rows_df = _parsed.rename(columns={id_col: "Pub_ID"})[["Autor_original", "Autor_key", "Pub_ID"]]
 
     if rows_df.empty:
@@ -1415,14 +1413,15 @@ def load_data(uploaded=None) -> Optional[pd.DataFrame]:
 
 @st.cache_data(show_spinner=False)
 def _cached_cas_ranking(
-    dff: pd.DataFrame,
+    _dff: pd.DataFrame,
     include_udd: bool,
     fmt: str,
     top_n: int,
     aff_col: Optional[str],
     author_col: Optional[str],
+    _cache_key: str = "",  # firma barata del dff para cache hit/miss
 ) -> pd.DataFrame:
-    return build_cas_ranking(dff, include_udd, fmt, top_n, aff_col, author_col)
+    return build_cas_ranking(_dff, include_udd, fmt, top_n, aff_col, author_col)
 
 
 # =========================
@@ -2105,7 +2104,9 @@ def main():
             author_col = _first_col(dff, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
 
             with st.spinner("Calculando ranking de autores CAS…"):
-                ranking = _cached_cas_ranking(dff, include_udd, fmt_key, top_n, aff_col, author_col)
+                _id_col_sig = _first_col(dff, ["ID_final", "DOI", "EID", "UT"])
+                _dff_sig = f"{len(dff)}_{hash(tuple(dff[_id_col_sig].iloc[:5].tolist())) if _id_col_sig and len(dff) else id(dff)}"
+                ranking = _cached_cas_ranking(dff, include_udd, fmt_key, top_n, aff_col, author_col, _cache_key=_dff_sig)
 
             if ranking.empty:
                 st.info("No se detectaron autores CAS en el subconjunto filtrado.")
