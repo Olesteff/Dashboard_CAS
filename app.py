@@ -2421,20 +2421,22 @@ def main():
             display_df = display_df[_mask_search]
 
         st.caption(f"Mostrando {_n(len(display_df))} publicaciones del subconjunto filtrado.")
+        # Convertir DOI a URL completa para LinkColumn
+        if "DOI" in display_df.columns:
+            display_df["DOI"] = display_df["DOI"].apply(
+                lambda x: f"https://doi.org/{x}"
+                if pd.notna(x) and str(x).strip() not in ("", "None", "nan") and str(x).startswith("10.")
+                else ""
+            )
         st.dataframe(
             display_df,
             use_container_width=True,
             height=500,
             column_config={
-                "Título": st.column_config.LinkColumn(
-                    "Título",
-                    help="Haz clic para abrir el documento",
-                    display_text=r"(.+)",
-                ),
                 "DOI": st.column_config.LinkColumn(
                     "DOI",
                     help="Haz clic para abrir el documento en doi.org",
-                    display_text=r"(.+)",
+                    display_text=r"https://doi\.org/(.+)",
                 ),
                 "_url_link": None,
             },
