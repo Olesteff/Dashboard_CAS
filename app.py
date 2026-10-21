@@ -892,26 +892,29 @@ def build_cas_ranking(
         return pd.DataFrame()
 
     # ---------- PASO 2: contar sobre TODOS los papers ----------
-    rows = []
-    for _, row in work.iterrows():
-        pub_id = row[id_col]
-        raw_authors = row.get(auth_col)
-        if raw_authors is None or (isinstance(raw_authors, float) and pd.isna(raw_authors)):
-            continue
-        seen_in_pub: set = set()
-        for entry in _parse_author_list(raw_authors):
-            key = canon_author(entry)
-            if not key or key in seen_in_pub:
-                continue
-            seen_in_pub.add(key)
-            if key in cas_author_keys:
-                display = fullname_lookup.get(key, entry)
-                rows.append({"Autor_original": display, "Autor_key": key, "Pub_ID": pub_id})
+    # Vectorizado: expandir autores → canon_key → filtrar CAS → agrupar
+    _parsed = (
+        work[[id_col, auth_col]]
+        .dropna(subset=[auth_col])
+        .copy()
+    )
+    _parsed["_entries"] = _parsed[auth_col].apply(_parse_author_list)
+    _parsed = _parsed.explode("_entries").dropna(subset=["_entries"])
+    _parsed = _parsed[_parsed["_entries"].astype(str).str.strip() != ""]
+    _parsed["Autor_key"] = _parsed["_entries"].apply(canon_author)
+    _parsed = _parsed[_parsed["Autor_key"] != ""]
+    # dedup por (pub, autor) para no contar 2 veces el mismo autor en el mismo paper
+    _parsed = _parsed.drop_duplicates(subset=[id_col, "Autor_key"])
+    _parsed = _parsed[_parsed["Autor_key"].isin(cas_author_keys)]
+    _parsed["Autor_original"] = _parsed.apply(
+        lambda r: fullname_lookup.get(r["Autor_key"], r["_entries"]), axis=1
+    )
+    rows_df = _parsed.rename(columns={id_col: "Pub_ID"})[["Autor_original", "Autor_key", "Pub_ID"]]
 
-    if not rows:
+    if rows_df.empty:
         return pd.DataFrame()
 
-    df_auth = pd.DataFrame(rows)
+    df_auth = rows_df
 
     counts = (
         df_auth.groupby("Autor_key", as_index=False)["Pub_ID"]
@@ -1618,7 +1621,8 @@ def main():
     mask &= df["Quartile"].isin(quart_filter)
 
     if dept_filter:
-        mask &= df["Departamentos_lista"].apply(lambda lst: any(d in dept_filter for d in lst))
+        _dept_set = set(dept_filter)
+        mask &= df["Departamentos_lista"].apply(lambda lst: bool(_dept_set.intersection(lst)))
 
     if doc_filter:
         doc_col = _first_col(df, ["Document Type", "Publication Type", "DT", "Type", "Tipo"])
