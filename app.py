@@ -2346,6 +2346,15 @@ def main():
         selected_cols = [c for c in basic_candidates if c in dff.columns]
         display_df = dff[selected_cols].copy() if selected_cols else dff.copy()
 
+        if "DOI" in display_df.columns:
+            display_df["_url_link"] = display_df["DOI"].apply(
+                lambda x: f"https://doi.org/{x}"
+                if pd.notna(x) and str(x).strip() not in ("", "None", "nan") and str(x).startswith("10.")
+                else None
+            )
+        else:
+            display_df["_url_link"] = None
+
         # Revista: usar Journal_display cuando tiene valor, sino Source title
         if "Journal_display" in display_df.columns and "Source title" in display_df.columns:
             display_df["Journal_display"] = display_df["Journal_display"].fillna("").astype(str).str.strip()
@@ -2391,6 +2400,8 @@ def main():
             "Cuartil", "JIF", "Departamento", "Citas_scopus", "Open Access",
         ]
         final_cols = [c for c in preferred_display_cols if c in display_df.columns]
+        if "_url_link" in display_df.columns:
+            final_cols.append("_url_link")
         if final_cols:
             display_df = display_df[final_cols].copy()
 
@@ -2410,7 +2421,25 @@ def main():
             display_df = display_df[_mask_search]
 
         st.caption(f"Mostrando {_n(len(display_df))} publicaciones del subconjunto filtrado.")
-        st.dataframe(display_df, use_container_width=True, height=500)
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            height=500,
+            column_config={
+                "Título": st.column_config.LinkColumn(
+                    "Título",
+                    help="Haz clic para abrir el documento",
+                    display_text=r"(.+)",
+                ),
+                "DOI": st.column_config.LinkColumn(
+                    "DOI",
+                    help="Haz clic para abrir el documento en doi.org",
+                    display_text=r"(.+)",
+                ),
+                "_url_link": None,
+            },
+            hide_index=True,
+        )
 
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
