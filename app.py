@@ -730,12 +730,13 @@ def _strip_scopus_id(name: str) -> str:
 
 
 def _build_fullname_lookup(dff: pd.DataFrame) -> dict:
+    """key canónica → nombre 'bonito' para mostrar. Usa el parser multi-fuente."""
     lookup: dict = {}
     fn_col = _first_col(dff, ["AuthorNames_consolidated", "Author full names", "Author Full Names"])
     if not fn_col:
         return lookup
     for val in dff[fn_col].dropna():
-        for entry in str(val).split(";"):
+        for entry in _parse_author_list(str(val)):
             name = _strip_scopus_id(entry)
             if not name or name.lower() in {"nan", "none"}:
                 continue
@@ -807,6 +808,37 @@ def _parse_author_list(raw: str) -> List[str]:
     return [s]
 
 
+@st.cache_data(show_spinner=False)
+def _build_global_cas_author_keys(
+    df_full: pd.DataFrame,
+    aff_col: Optional[str],
+    include_udd: bool,
+) -> set:
+    """Universo CAS global calculado sobre el dataset COMPLETO (sin filtros del sidebar)."""
+    if df_full is None or df_full.empty:
+        return set()
+    work = df_full
+    aff_cols = [c for c in [aff_col, "Affiliations", "Addresses"] if c and c in work.columns]
+    if not aff_cols:
+        return set()
+    cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd=include_udd)
+    cas_papers = work.loc[cas_mask]
+    if cas_papers.empty:
+        return set()
+    auth_candidates = ["AuthorNames_consolidated", "Author full names",
+                       "Author Full Names", "Authors", "Author Names", "Author"]
+    cas_keys: set = set()
+    for auth_candidate in auth_candidates:
+        if auth_candidate not in cas_papers.columns:
+            continue
+        for raw in cas_papers[auth_candidate].dropna().astype(str):
+            for entry in _parse_author_list(raw):
+                key = canon_author(entry)
+                if key:
+                    cas_keys.add(key)
+    return cas_keys
+
+
 def build_cas_ranking(
     dff: pd.DataFrame,
     include_udd: bool,
@@ -844,21 +876,15 @@ def build_cas_ranking(
         return pd.DataFrame()
 
     # ---------- PASO 1: identidad CAS global ----------
-    cas_author_keys: set = set()
-    aff_cols = [c for c in [aff_col, "Affiliations", "Addresses"] if c and c in work.columns]
-
-    if aff_cols:
-        cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd=include_udd)
-        cas_papers = work.loc[cas_mask]
-        for auth_candidate in [auth_col, "AuthorNames_consolidated",
-                               "Author full names", "Author Full Names", "Authors"]:
-            if auth_candidate not in cas_papers.columns:
-                continue
-            for raw in cas_papers[auth_candidate].dropna().astype(str):
-                for entry in _parse_author_list(raw):
-                    key = canon_author(entry)
-                    if key:
-                        cas_author_keys.add(key)
+    # FIX: el universo CAS se calcula sobre el dataset COMPLETO (df),
+    # no sobre el subconjunto filtrado (dff). Si no, un autor cuyo único
+    # paper CAS fue filtrado por año/cuartil/depto nunca entra al universo.
+    _df_full = st.session_state.get("_df_full_for_cas")
+    cas_author_keys: set = _build_global_cas_author_keys(
+        _df_full if _df_full is not None else work,
+        aff_col,
+        include_udd,
+    )
 
     if not cas_author_keys:
         return pd.DataFrame()
@@ -929,7 +955,7 @@ def build_cas_ranking(
 
 
 def _author_yearly_evolution(dff: pd.DataFrame, author_display: str) -> pd.DataFrame:
-    """Publicaciones por año para un autor dado (busca por nombre display)."""
+    """Publicaciones por año para un autor dado (usa parser multi-fuente)."""
     auth_col = _first_col(dff, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
     if not auth_col or "Year_int" not in dff.columns:
         return pd.DataFrame()
@@ -937,7 +963,7 @@ def _author_yearly_evolution(dff: pd.DataFrame, author_display: str) -> pd.DataF
     rows = []
     for _, row in dff.iterrows():
         raw = str(row.get(auth_col, "")) if pd.notna(row.get(auth_col)) else ""
-        for entry in raw.split(";"):
+        for entry in _parse_author_list(raw):
             name = _strip_scopus_id(entry)
             if canon_author(name) == key and pd.notna(row["Year_int"]):
                 rows.append(int(row["Year_int"]))
@@ -1547,6 +1573,9 @@ def main():
     if df is None:
         st.error(f"No se encontró `{DEFAULT_XLSX}`. Sube un XLSX en la barra lateral.")
         st.stop()
+
+    # Cachear el df completo para que build_cas_ranking calcule el universo CAS global
+    st.session_state["_df_full_for_cas"] = df
 
     # ── Info sidebar ──
     st.sidebar.header("📊 Información del Dataset")
