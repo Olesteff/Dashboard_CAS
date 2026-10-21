@@ -614,6 +614,16 @@ def _normalize_author_name(name: str) -> str:
 
 
 def canon_author(name: str) -> str:
+    """Clave canónica 'apellido|inicial' — SOLO primera letra del nombre.
+
+    Unifica todas las variantes del mismo autor:
+        'Lavados, P.'       -> 'lavados|p'
+        'Lavados, Pablo'    -> 'lavados|p'
+        'Lavados, Pablo M.' -> 'lavados|p'
+        'Pablo Lavados'     -> 'lavados|p'
+        'LAVADOS, PABLO'    -> 'lavados|p'
+        'Pérez, José'       -> 'perez|j'
+    """
     name = _normalize_author_name(name)
     if not name:
         return ""
@@ -626,10 +636,11 @@ def canon_author(name: str) -> str:
             given = " ".join(parts[:-1])
         else:
             return _norm_text(name)
-    last_norm = _norm_text(last)
+
+    last_norm = re.sub(r"[\.\s]+", "", _norm_text(last))
     given_norm = _norm_text(given)
     first_alpha = next((ch for ch in given_norm if ch.isalpha()), "")
-    return f"{last_norm}|{first_alpha}"
+    return f"{last_norm}|{first_alpha}" if first_alpha else last_norm
 
 
 _ICIM_CANON_KEYS = {canon_author(n) for n in _ICIM_AUTHOR_NAMES}
@@ -762,6 +773,40 @@ def _clinical_dept_author_keys(dff: pd.DataFrame, aff_col: Optional[str]) -> set
     return keys
 
 
+def _parse_author_list(raw: str) -> List[str]:
+    """Parser robusto de listas de autores multi-fuente (Scopus/WoS/PubMed).
+
+    Maneja:
+      - ';' como separador principal (Scopus/WoS)
+      - IDs Scopus pegados: 'Lavados P. (12345); Pérez J. (67890)'
+      - Formato PubMed 'Apellido A, Apellido B, Apellido C' (sin ';')
+    """
+    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+        return []
+    s = str(raw).strip()
+    if not s or s.lower() in {"nan", "none"}:
+        return []
+
+    s = re.sub(r"\(\d+\)", "", s)
+
+    if ";" in s:
+        return [c.strip() for c in s.split(";") if c.strip()]
+
+    if "|" in s and "," not in s:
+        return [c.strip() for c in s.split("|") if c.strip()]
+
+    parts = [p.strip().rstrip(".") for p in s.split(",") if p.strip()]
+    if len(parts) >= 2:
+        pubmed_like = sum(
+            1 for p in parts
+            if re.fullmatch(r"[A-Za-zÀ-ÿ'\-\s]+(\s+[A-Z]{1,3}\.?)?", p.strip())
+        )
+        if pubmed_like >= max(2, len(parts) // 2):
+            return [p.strip() for p in parts if p.strip()]
+
+    return [s]
+
+
 def build_cas_ranking(
     dff: pd.DataFrame,
     include_udd: bool,
@@ -770,6 +815,19 @@ def build_cas_ranking(
     aff_col: Optional[str],
     author_col: Optional[str],
 ) -> pd.DataFrame:
+    """Ranking de autores CAS con estrategia 'CAS global primero, luego contar todo'.
+
+    PASO 1 — Identidad CAS global:
+        Cualquier autor que aparezca al menos UNA vez con afiliación CAS
+        se considera autor CAS para todo el dataset.
+
+    PASO 2 — Conteo total:
+        Se recorren TODOS los papers y se le suma 1 publicación a cada autor
+        cuya clave canónica esté en el conjunto CAS del Paso 1.
+    """
+    if dff is None or dff.empty:
+        return pd.DataFrame()
+
     fullname_lookup = _build_fullname_lookup(dff)
 
     work = dff.copy()
@@ -778,45 +836,48 @@ def build_cas_ranking(
         work["_id"] = work.index.astype(str)
         id_col = "_id"
 
-    # 1. Identificar globalmente quiénes son autores CAS
+    auth_col = _first_col(work, [
+        "AuthorNames_consolidated", "Author full names", "Author Full Names",
+        "Authors", "Author Names", "Author",
+    ])
+    if not auth_col:
+        return pd.DataFrame()
+
+    # ---------- PASO 1: identidad CAS global ----------
     cas_author_keys: set = set()
-    aff_cols = [c for c in [aff_col, "Affiliations", "Addresses"] if c]
-    if aff_col:
-        cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd=True)
+    aff_cols = [c for c in [aff_col, "Affiliations", "Addresses"] if c and c in work.columns]
+
+    if aff_cols:
+        cas_mask = _cas_mask_vectorized(work, aff_cols, include_udd=include_udd)
         cas_papers = work.loc[cas_mask]
-        auth_col_for_mask = _first_col(cas_papers, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
-        if auth_col_for_mask:
-            for authors_str in cas_papers[auth_col_for_mask].dropna():
-                for entry in str(authors_str).split(";"):
-                    name = _strip_scopus_id(entry)
-                    if name:
-                        cas_author_keys.add(canon_author(name))
+        for auth_candidate in [auth_col, "AuthorNames_consolidated",
+                               "Author full names", "Author Full Names", "Authors"]:
+            if auth_candidate not in cas_papers.columns:
+                continue
+            for raw in cas_papers[auth_candidate].dropna().astype(str):
+                for entry in _parse_author_list(raw):
+                    key = canon_author(entry)
+                    if key:
+                        cas_author_keys.add(key)
 
     if not cas_author_keys:
         return pd.DataFrame()
 
-    # 2. Procesar TODOS los papers y sumar a los autores CAS
-    auth_col = _first_col(work, ["AuthorNames_consolidated", "Author full names", "Author Full Names", "Authors"])
-    if not auth_col:
-        return pd.DataFrame()
-
+    # ---------- PASO 2: contar sobre TODOS los papers ----------
     rows = []
     for _, row in work.iterrows():
         pub_id = row[id_col]
-        raw_authors = str(row.get(auth_col, "")) if pd.notna(row.get(auth_col)) else ""
-        if not raw_authors or raw_authors.lower() == "nan":
+        raw_authors = row.get(auth_col)
+        if raw_authors is None or (isinstance(raw_authors, float) and pd.isna(raw_authors)):
             continue
         seen_in_pub: set = set()
-        for entry in raw_authors.split(";"):
-            name = _strip_scopus_id(entry)
-            if not name:
-                continue
-            key = canon_author(name)
+        for entry in _parse_author_list(raw_authors):
+            key = canon_author(entry)
             if not key or key in seen_in_pub:
                 continue
             seen_in_pub.add(key)
             if key in cas_author_keys:
-                display = fullname_lookup.get(key, name)
+                display = fullname_lookup.get(key, entry)
                 rows.append({"Autor_original": display, "Autor_key": key, "Pub_ID": pub_id})
 
     if not rows:
@@ -824,14 +885,12 @@ def build_cas_ranking(
 
     df_auth = pd.DataFrame(rows)
 
-    # 3. Contar publicaciones únicas por autor
     counts = (
         df_auth.groupby("Autor_key", as_index=False)["Pub_ID"]
         .nunique()
         .rename(columns={"Pub_ID": "Publicaciones"})
     )
 
-    # 4. Elegir mejor nombre para mostrar
     def pick_name(series: pd.Series) -> str:
         vals = series.dropna().astype(str)
         vals = vals[(vals != "") & (~vals.str.lower().isin(["nan", "none"]))]
