@@ -2345,6 +2345,21 @@ def main():
         selected_cols = [c for c in basic_candidates if c in dff.columns]
         display_df = dff[selected_cols].copy() if selected_cols else dff.copy()
 
+        # Revista: usar Journal_display cuando tiene valor, sino Source title
+        if "Journal_display" in display_df.columns and "Source title" in display_df.columns:
+            display_df["Journal_display"] = display_df["Journal_display"].fillna("").astype(str).str.strip()
+            display_df["Journal_display"] = display_df.apply(
+                lambda r: r["Source title"] if (not r["Journal_display"] or r["Journal_display"].lower() in {"nan", "none", ""}) else r["Journal_display"],
+                axis=1,
+            )
+
+        # Autores: limpiar "None" / NaN
+        if "Authors" in display_df.columns:
+            display_df["Authors"] = display_df["Authors"].astype(str).str.strip()
+            display_df["Authors"] = display_df["Authors"].where(
+                ~display_df["Authors"].str.lower().isin({"none", "nan", ""}), other=""
+            )
+
         if "OpenAccess_flag" in display_df.columns:
             display_df["OpenAccess_flag"] = display_df["OpenAccess_flag"].map(
                 {True: "Open Access", False: "Closed"}
