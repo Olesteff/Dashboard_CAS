@@ -629,6 +629,8 @@ def canon_author(name: str) -> str:
     last_norm = _norm_text(last)
     given_norm = _norm_text(given)
     first_alpha = next((ch for ch in given_norm if ch.isalpha()), "")
+    if len(given_norm) >= 3:
+        return f"{last_norm}|{given_norm[:3]}"
     return f"{last_norm}|{first_alpha}"
 
 
@@ -815,9 +817,6 @@ def build_cas_ranking(
                 continue
             key = canon_author(name)
             if not key or key in seen_in_pub:
-                continue
-            # Excluir autores sin afiliación CAS (co-autores externos)
-            if cas_author_keys and key not in cas_author_keys:
                 continue
             seen_in_pub.add(key)
             display = fullname_lookup.get(key, name)
@@ -1563,21 +1562,24 @@ def main():
     h_index = int(sum(sorted_citas >= (np.arange(len(sorted_citas)) + 1)))
 
     col1, col2, col3, col4 = st.columns(4)
-    with col1: st.metric("📚 Publicaciones", f"{_n(len(dff))} / {_n(len(df))}")
-    with col2: st.metric("🔓 % Open Access", _pct(dff['OpenAccess_flag'].mean()))
-    with col3: st.metric("📈 Suma JIF", _f(dff['Journal Impact Factor'].sum()))
+    with col1: st.metric("📚 Publicaciones",    f"{_n(len(dff))} / {_n(len(df))}")
+    with col2: st.metric("🔓 % Open Access",    _pct(dff['OpenAccess_flag'].mean()))
+    with col3: st.metric("📈 Suma JIF",         _f(dff['Journal Impact Factor'].sum()))
     with col4: st.metric("🧪 Ensayos clínicos", int(dff["ClinicalTrial_flag"].sum()))
 
     col5, col6, col7, col8 = st.columns(4)
-    with col5: st.metric("📖 Total citas", _n(int(total_citas.sum())))
+    with col5: st.metric("📖 Total citas",    _n(int(total_citas.sum())))
     with col6: st.metric("📖 Promedio citas", _f(total_citas.mean()))
-    with col7: st.metric("🏆 % en Q1", _pct((dff['Quartile'] == 'Q1').mean()))
-    with col8: st.metric("📊 h-index", h_index)
+    with col7: st.metric("🏆 % en Q1",        _pct((dff['Quartile'] == 'Q1').mean()))
+    with col8: st.metric("📊 h-index",        h_index)
 
-    if "Colab_externa" in dff.columns:
-        col9, col10 = st.columns(2)
-        with col9:  st.metric("🤝 % Colab. externa",         _pct(dff['Colab_externa'].mean()))
-        with col10: st.metric("🌍 % Colab. internacional",   _pct(dff['Colab_internacional'].mean()))
+    col9, col10, col11, col12 = st.columns(4)
+    with col9:  st.metric("🤝 % Colab. externa",       _pct(dff['Colab_externa'].mean()) if 'Colab_externa' in dff.columns else "—")
+    with col10: st.metric("🌍 % Colab. internacional", _pct(dff['Colab_internacional'].mean()) if 'Colab_internacional' in dff.columns else "—")
+    _n_sin_doi = int(dff['DOI'].isna().sum()) if 'DOI' in dff.columns else 0
+    with col11: st.metric("🔗 Sin DOI",                _n(_n_sin_doi))
+    _n_sin_jcr = int(dff['JIF Quartile'].isna().sum()) if 'JIF Quartile' in dff.columns else 0
+    with col12: st.metric("📋 Sin cuartil JCR",        _n(_n_sin_jcr))
 
     _jif_vals = dff["Journal Impact Factor"]
     _jif_mean = float(_jif_vals[_jif_vals > 0].mean()) if (_jif_vals > 0).any() else 0.0
